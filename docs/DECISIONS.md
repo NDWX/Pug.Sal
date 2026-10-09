@@ -566,6 +566,14 @@ reads, and the two interfaces get their own implementations.
 - **Clients.** `LocalityDirectoryClient` and `LocalityAdministrationClient` extend Pug.HttpApiClient's
   `ApiClient`. Pug.HttpApiClient's raw calls do not throw on 422, so the client checks the status
   itself.
+- **OpenAPI metadata.** Every endpoint has a name, a tag ("Sal" or "Sal administration") and a
+  summary. It also declares exactly the statuses it can produce, through the `ResponseMetadata`
+  helpers, and request content types where it takes a body. The import's open-ended
+  `option.<name>` query parameters are documented in its description.
+  - Sal serves no OpenAPI document itself. The host surfaces the metadata, typically in
+    development only, with `AddEndpointsApiExplorer()` and `AddSwaggerGen()`, or with
+    `AddOpenApi()` and `MapOpenApi()`. This follows Scheduling and Groups.
+  - `EndpointMetadataTests` pins all of the above.
 - **Target frameworks.** `Pug.Sal.WebApi` and `Pug.Sal.DependencyInjection` are implementations, so
   they are `net10.0` only. `WebApi.Models` and `Client` are contracts and multi-target
   (`net6.0;net8.0;net10.0`).
@@ -589,9 +597,10 @@ reads, and the two interfaces get their own implementations.
 
 ## Phase status
 
-Since 2026-10-09 (user directive), each phase is committed once it passes the gate, and work then
-continues to the next phase without pausing. The repository was initialized then, and phases 0–2
-make up the first commit.
+Each phase is committed once it passes the gate, then work **pauses for user verification**
+before the next phase starts. (The repository was initialized on 2026-10-09, with phases 0–2 as the
+first commit. Phases 3–6 were then built without pausing, through a misreading of the user's
+instruction; the user chose to keep that work.)
 
 - **0 Decisions:** this log, `CLAUDE.md`, `global.json`, `Directory.Build.props`. DONE.
 - **1 Models + Abstractions:** contracts only, build-gated. DONE, approved 2026-10-09.

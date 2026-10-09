@@ -10,17 +10,26 @@ namespace Pug.Sal.WebApi
 {
 	public static class SalDirectoryEndpoints
 	{
-		// Maps the ILocalityDirectory surface under sal/ (DECISIONS D16): audit-free records. Every
-		// endpoint requires an authenticated caller; the directory itself authorizes. Reads carry an
-		// ETag derived from the dataset version(s) they were read at and answer If-None-Match with
-		// 304. A locality is addressed by query (subdivision, postcode, name), since its
-		// subdivision and postcode may be absent.
+		/// <summary>
+		/// Maps the <see cref="ILocalityDirectory"/> surface under <c>sal/</c> (DECISIONS D16, D20):
+		/// audit-free records. Pass <c>app</c> to mount at the application root, or a group from
+		/// <c>app.MapGroup( "/prefix" )</c> to mount beneath a further prefix.
+		/// Every endpoint requires an authenticated caller; the directory itself authorizes. Reads
+		/// carry an ETag derived from the dataset version(s) they were read at and answer
+		/// If-None-Match with 304. A locality is addressed by query (subdivision, postcode, name),
+		/// since its subdivision and postcode may be absent.
+		/// Each endpoint carries OpenAPI metadata (name, tag, summary, request and response types);
+		/// the host surfaces it, typically in development only, by configuring
+		/// <c>AddEndpointsApiExplorer()</c> with <c>AddSwaggerGen()</c>, or
+		/// <c>AddOpenApi()</c> with <c>MapOpenApi()</c>.
+		/// </summary>
 		public static IEndpointRouteBuilder MapSalDirectoryEndpoints( this IEndpointRouteBuilder routes )
 		{
 			routes.MapGet( "sal/countries", GetCountries )
 				.RequireAuthorization()
 				.WithName( "SalGetCountries" )
 				.WithTags( "Sal" )
+				.WithSummary( "List countries, current ones unless includeRetired" )
 				.Produces<IEnumerable<CountryInfo>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden );
@@ -29,6 +38,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalGetCountryVersions" )
 				.WithTags( "Sal" )
+				.WithSummary( "Get every country's current dataset version, for cache revalidation" )
 				.Produces<IEnumerable<CountryVersion>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden );
@@ -37,6 +47,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalGetCountry" )
 				.WithTags( "Sal" )
+				.WithSummary( "Get a country by ISO 3166-1 alpha-2 code" )
 				.Produces<CountryInfo>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden )
@@ -46,6 +57,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalGetSubdivisions" )
 				.WithTags( "Sal" )
+				.WithSummary( "List a country's subdivisions, current ones unless includeRetired" )
 				.Produces<Versioned<IEnumerable<SubdivisionInfo>>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden )
@@ -55,6 +67,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalGetSubdivision" )
 				.WithTags( "Sal" )
+				.WithSummary( "Get a subdivision by code" )
 				.Produces<Versioned<SubdivisionInfo>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden )
@@ -64,6 +77,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalSearchLocalities" )
 				.WithTags( "Sal" )
+				.WithSummary( "Search a country's current localities by name prefix" )
 				.Produces<Versioned<IEnumerable<LocalityInfo>>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces<BadRequestResultInfo>( StatusCodes.Status400BadRequest )
@@ -74,6 +88,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalGetLocalities" )
 				.WithTags( "Sal" )
+				.WithSummary( "List a country's localities, optionally by subdivision, postcode and name" )
 				.Produces<Versioned<IEnumerable<LocalityInfo>>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden )
@@ -83,6 +98,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalGetLocality" )
 				.WithTags( "Sal" )
+				.WithSummary( "Get a locality by its key: subdivision, postcode and name" )
 				.Produces<Versioned<LocalityInfo>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces<BadRequestResultInfo>( StatusCodes.Status400BadRequest )
@@ -94,6 +110,7 @@ namespace Pug.Sal.WebApi
 				.RequireAuthorization()
 				.WithName( "SalValidate" )
 				.WithTags( "Sal" )
+				.WithSummary( "Validate an address candidate's country, subdivision, locality and postcode" )
 				.Produces<ValidationResult>()
 				.Produces<BadRequestResultInfo>( StatusCodes.Status400BadRequest )
 				.Produces( StatusCodes.Status403Forbidden )

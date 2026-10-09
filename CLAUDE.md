@@ -96,8 +96,8 @@ sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1"   # Postgres via Te
 
 ## Workflow requirement
 
-- Work proceeds in phases. Each phase is **committed once the gate passes**, and work then continues
-  to the next phase (user directive, 2026-10-09). Current status is at the end of
-  `docs/DECISIONS.md`.
+- Work proceeds in phases, with a **pause for user verification after every phase**. Each phase is
+  committed once the gate passes; do not start the next phase until the user says so. Current
+  status is at the end of `docs/DECISIONS.md`.
 - Delegation: at most one executor agent at a time, and no fan-out. The main session reviews the
   diff and runs the gate itself.

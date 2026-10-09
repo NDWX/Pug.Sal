@@ -14,87 +14,182 @@ namespace Pug.Sal.WebApi
 		// becomes ImportRequest.Options[<name>].
 		public const string ImportOptionPrefix = "option.";
 
-		// Maps the ILocalityAdministration surface under sal/admin/ (DECISIONS D16): full records,
-		// audit contexts included. Every endpoint requires an authenticated caller; administration
-		// itself authorizes. Reads carry an ETag as the directory's do.
-		//
-		// An import posts the dataset itself as the request body (any media type), with the importer,
-		// source label and options as query parameters.
+		/// <summary>
+		/// Maps the <see cref="ILocalityAdministration"/> surface under <c>sal/admin/</c> (DECISIONS
+		/// D16, D20): full records, audit contexts included. Pass <c>app</c> to mount at the
+		/// application root, or a group from <c>app.MapGroup( "/prefix" )</c> to mount beneath a
+		/// further prefix.
+		/// Every endpoint requires an authenticated caller; administration itself authorizes. Reads
+		/// carry an ETag as the directory's do. An import posts the dataset itself as the request
+		/// body (any media type), with the importer, source label and options as query parameters.
+		/// Each endpoint carries OpenAPI metadata (name, tag, summary, request and response types);
+		/// the host surfaces it, typically in development only, by configuring
+		/// <c>AddEndpointsApiExplorer()</c> with <c>AddSwaggerGen()</c>, or
+		/// <c>AddOpenApi()</c> with <c>MapOpenApi()</c>.
+		/// </summary>
 		public static IEndpointRouteBuilder MapSalAdministrationEndpoints( this IEndpointRouteBuilder routes )
 		{
 			// == Reads ==
 
-			Read( routes.MapGet( "sal/admin/countries", GetCountries ), "SalAdminGetCountries" ).Produces<IEnumerable<Country>>();
-			Read( routes.MapGet( "sal/admin/countries/versions", GetCountryVersions ), "SalAdminGetCountryVersions" )
-				.Produces<IEnumerable<CountryVersion>>();
-			Read( routes.MapGet( "sal/admin/countries/{country}", GetCountry ), "SalAdminGetCountry" ).Produces<Country>();
-			Read( routes.MapGet( "sal/admin/countries/{country}/subdivisions", GetSubdivisions ), "SalAdminGetSubdivisions" )
-				.Produces<Versioned<IEnumerable<Subdivision>>>();
-			Read( routes.MapGet( "sal/admin/countries/{country}/subdivisions/{subdivision}", GetSubdivision ), "SalAdminGetSubdivision" )
-				.Produces<Versioned<Subdivision>>();
-			Read( routes.MapGet( "sal/admin/countries/{country}/localities/search", SearchLocalities ), "SalAdminSearchLocalities" )
-				.Produces<Versioned<IEnumerable<Locality>>>();
-			Read( routes.MapGet( "sal/admin/countries/{country}/localities", GetLocalities ), "SalAdminGetLocalities" )
-				.Produces<Versioned<IEnumerable<Locality>>>();
-			Read( routes.MapGet( "sal/admin/countries/{country}/locality", GetLocality ), "SalAdminGetLocality" )
-				.Produces<Versioned<Locality>>();
-			Write( routes.MapGet( "sal/admin/countries/{country}/imports", GetImportRuns ), "SalAdminGetImportRuns" )
-				.Produces<IEnumerable<ImportRun>>();
+			Endpoint( routes.MapGet( "sal/admin/countries", GetCountries ), "SalAdminGetCountries",
+					"List countries with their audit contexts, current ones unless includeRetired" )
+				.Produces<IEnumerable<Country>>()
+				.NotModified();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/versions", GetCountryVersions ), "SalAdminGetCountryVersions",
+					"Get every country's current dataset version, for cache revalidation" )
+				.Produces<IEnumerable<CountryVersion>>()
+				.NotModified();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}", GetCountry ), "SalAdminGetCountry",
+					"Get a country with its audit contexts" )
+				.Produces<Country>()
+				.NotModified()
+				.NotFound();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}/subdivisions", GetSubdivisions ), "SalAdminGetSubdivisions",
+					"List a country's subdivisions with their audit contexts, current ones unless includeRetired" )
+				.Produces<Versioned<IEnumerable<Subdivision>>>()
+				.NotModified()
+				.NotFound();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}/subdivisions/{subdivision}", GetSubdivision ), "SalAdminGetSubdivision",
+					"Get a subdivision with its audit contexts" )
+				.Produces<Versioned<Subdivision>>()
+				.NotModified()
+				.NotFound();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}/localities/search", SearchLocalities ), "SalAdminSearchLocalities",
+					"Search a country's current localities by name prefix, with their audit contexts" )
+				.Produces<Versioned<IEnumerable<Locality>>>()
+				.NotModified()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}/localities", GetLocalities ), "SalAdminGetLocalities",
+					"List a country's localities with their audit contexts, optionally by subdivision, postcode and name" )
+				.Produces<Versioned<IEnumerable<Locality>>>()
+				.NotModified()
+				.NotFound();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}/locality", GetLocality ), "SalAdminGetLocality",
+					"Get a locality with its audit contexts by its key: subdivision, postcode and name" )
+				.Produces<Versioned<Locality>>()
+				.NotModified()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( routes.MapGet( "sal/admin/countries/{country}/imports", GetImportRuns ), "SalAdminGetImportRuns",
+					"List a country's import runs, most recent first" )
+				.Produces<IEnumerable<ImportRun>>()
+				.NotFound();
 
 			// == Countries ==
 
-			Write( routes.MapPost( "sal/admin/countries", CreateCountry ), "SalAdminCreateCountry" )
-				.Produces<Country>( StatusCodes.Status201Created );
-			Write( routes.MapPut( "sal/admin/countries/{country}", UpdateCountry ), "SalAdminUpdateCountry" ).Produces<Country>();
-			Write( routes.MapPost( "sal/admin/countries/{country}/retire", RetireCountry ), "SalAdminRetireCountry" ).Produces<Country>();
-			Write( routes.MapPost( "sal/admin/countries/{country}/reinstate", ReinstateCountry ), "SalAdminReinstateCountry" )
-				.Produces<Country>();
+			Endpoint( routes.MapPost( "sal/admin/countries", CreateCountry ), "SalAdminCreateCountry", "Create a country" )
+				.Produces<Country>( StatusCodes.Status201Created )
+				.Invalid()
+				.Duplicate();
+
+			Endpoint( routes.MapPut( "sal/admin/countries/{country}", UpdateCountry ), "SalAdminUpdateCountry",
+					"Replace a country's definition; the route names the country" )
+				.Produces<Country>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/retire", RetireCountry ), "SalAdminRetireCountry",
+					"Retire a country; retiring a retired country changes nothing" )
+				.Produces<Country>()
+				.NotFound();
+
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/reinstate", ReinstateCountry ), "SalAdminReinstateCountry",
+					"Reinstate a retired country; reinstating a current country changes nothing" )
+				.Produces<Country>()
+				.NotFound();
 
 			// == Subdivisions ==
 
-			Write( routes.MapPost( "sal/admin/countries/{country}/subdivisions", CreateSubdivision ), "SalAdminCreateSubdivision" )
-				.Produces<Versioned<Subdivision>>( StatusCodes.Status201Created );
-			Write( routes.MapPut( "sal/admin/countries/{country}/subdivisions/{subdivision}", UpdateSubdivision ), "SalAdminUpdateSubdivision" )
-				.Produces<Versioned<Subdivision>>();
-			Write( routes.MapPost( "sal/admin/countries/{country}/subdivisions/{subdivision}/retire", RetireSubdivision ),
-					"SalAdminRetireSubdivision" )
-				.Produces<Versioned<Subdivision>>();
-			Write( routes.MapPost( "sal/admin/countries/{country}/subdivisions/{subdivision}/reinstate", ReinstateSubdivision ),
-					"SalAdminReinstateSubdivision" )
-				.Produces<Versioned<Subdivision>>();
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/subdivisions", CreateSubdivision ), "SalAdminCreateSubdivision",
+					"Create a subdivision; the route names the country" )
+				.Produces<Versioned<Subdivision>>( StatusCodes.Status201Created )
+				.Invalid()
+				.NotFound()
+				.Duplicate();
+
+			Endpoint( routes.MapPut( "sal/admin/countries/{country}/subdivisions/{subdivision}", UpdateSubdivision ), "SalAdminUpdateSubdivision",
+					"Replace a subdivision's name and type; the route names the subdivision" )
+				.Produces<Versioned<Subdivision>>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/subdivisions/{subdivision}/retire", RetireSubdivision ),
+					"SalAdminRetireSubdivision", "Retire a subdivision; retiring a retired subdivision changes nothing" )
+				.Produces<Versioned<Subdivision>>()
+				.NotFound();
+
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/subdivisions/{subdivision}/reinstate", ReinstateSubdivision ),
+					"SalAdminReinstateSubdivision", "Reinstate a retired subdivision; reinstating a current subdivision changes nothing" )
+				.Produces<Versioned<Subdivision>>()
+				.NotFound();
 
 			// == Localities ==
 
-			Write( routes.MapPost( "sal/admin/countries/{country}/localities", CreateLocality ), "SalAdminCreateLocality" )
-				.Produces<Versioned<Locality>>( StatusCodes.Status201Created );
-			Write( routes.MapPost( "sal/admin/countries/{country}/locality/retire", RetireLocality ), "SalAdminRetireLocality" )
-				.Produces<Versioned<Locality>>();
-			Write( routes.MapPost( "sal/admin/countries/{country}/locality/reinstate", ReinstateLocality ), "SalAdminReinstateLocality" )
-				.Produces<Versioned<Locality>>();
-			Write( routes.MapDelete( "sal/admin/countries/{country}/locality", DeleteLocality ), "SalAdminDeleteLocality" )
-				.Produces<DatasetVersionResult>();
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/localities", CreateLocality ), "SalAdminCreateLocality",
+					"Create a locality; the route names the country" )
+				.Produces<Versioned<Locality>>( StatusCodes.Status201Created )
+				.Invalid()
+				.NotFound()
+				.Duplicate();
+
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/locality/retire", RetireLocality ), "SalAdminRetireLocality",
+					"Retire a locality, named by subdivision, postcode and name" )
+				.Produces<Versioned<Locality>>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/locality/reinstate", ReinstateLocality ), "SalAdminReinstateLocality",
+					"Reinstate a retired locality, named by subdivision, postcode and name" )
+				.Produces<Versioned<Locality>>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( routes.MapDelete( "sal/admin/countries/{country}/locality", DeleteLocality ), "SalAdminDeleteLocality",
+					"Delete a locality, named by subdivision, postcode and name; returns the dataset version produced" )
+				.Produces<DatasetVersionResult>()
+				.Invalid()
+				.NotFound();
 
 			// == Imports ==
 
-			Write( routes.MapPost( "sal/admin/countries/{country}/imports", Import ), "SalAdminImport" )
+			Endpoint( routes.MapPost( "sal/admin/countries/{country}/imports", Import ), "SalAdminImport",
+					"Import a dataset covering the whole country" )
+				.WithDescription( ImportDescription )
 				.Accepts<Stream>( "application/octet-stream", "text/csv", "text/plain" )
 				.Produces<ImportRun>()
+				.Invalid()
+				.NotFound()
 				.Produces<FailureInfo>( StatusCodes.Status422UnprocessableEntity );
 
 			return routes;
 		}
 
-		private static RouteHandlerBuilder Read( RouteHandlerBuilder endpoint, string name ) =>
-			Write( endpoint, name ).Produces( StatusCodes.Status304NotModified );
+		// The option.<name> parameters are open-ended, so no handler parameter declares them.
+		private const string ImportDescription =
+			"The request body is the dataset itself, in the importer's format (any media type). Query parameters: " +
+			"importer (required) names a registered dataset importer, matched case-insensitively (e.g. csv); " +
+			"source (optional) is a free-form label recorded on the import run; " +
+			"option.<name>=<value> (any number) passes importer-specific options, each becoming ImportRequest.Options[<name>]. " +
+			"The csv importer reads option.locality, option.postcode and option.subdivision (header names of those columns), " +
+			"option.subdivisionPrefix (prepended to subdivision values, e.g. AU-) and option.delimiter (one character, or tab). " +
+			"The dataset must cover the whole country: localities it does not hold are deleted. " +
+			"422 reports an unknown importer (UNKNOWN_IMPORTER) or an unreadable or invalid dataset (INVALID_DATASET, with Position).";
 
-		private static RouteHandlerBuilder Write( RouteHandlerBuilder endpoint, string name ) =>
+		private static RouteHandlerBuilder Endpoint( RouteHandlerBuilder endpoint, string name, string summary ) =>
 			endpoint.RequireAuthorization()
 					.WithName( name )
 					.WithTags( "Sal administration" )
-					.Produces<BadRequestResultInfo>( StatusCodes.Status400BadRequest )
-					.Produces( StatusCodes.Status403Forbidden )
-					.Produces<FailureInfo>( StatusCodes.Status404NotFound )
-					.Produces<FailureInfo>( StatusCodes.Status409Conflict );
+					.WithSummary( summary )
+					.Produces( StatusCodes.Status403Forbidden );
 
 		private static IResult Versioned<T>( HttpContext context, Versioned<T> read ) =>
 			SalResults.Tagged( context, SalResults.VersionTag( read.DatasetVersion ), read );
