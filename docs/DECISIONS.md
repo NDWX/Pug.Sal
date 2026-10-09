@@ -1,0 +1,370 @@
+# Pug.Sal — Design Decisions
+
+Decision log for Pug.Sal (approved plan: `~/.claude/plans/compiled-spinning-turtle.md`). Each entry
+records the decision and the reasoning, so work can resume without the original conversation.
+
+## Context
+
+Sal maintains the countries, their states/territories (subdivisions), suburbs (localities) and
+postcodes. It is the single source of truth that internal applications validate user address input
+against. Agreed shape (2026-10-07):
+
+- **Internal use only.** Sal is not a data-redistribution service and not a paid service. Whether a
+  dataset may be loaded is therefore the **host's concern**: Sal carries no licence or attribution
+  model, and importers do not judge their source files.
+- **Australia first.** Other countries follow through the same importer family.
+
+## D1 — Package shape follows Pug.Scheduling
+
+`Models / Abstractions / core / Data.Abstractions / Data.SQLite / Data.Postgres / Importers.* /
+WebApi.Models / WebApi / Client / DependencyInjection`. A consumer hosts Sal in-process through DI,
+or out-of-process behind `MapSalEndpoints()` and binds the same interfaces to `Pug.Sal.Client`. The
+client reproduces the facades' exceptions, so callers cannot tell local from remote. Contracts
+(Models, Abstractions, WebApi.Models, Client) multi-target `net6.0;net8.0;net10.0`, and
+implementations are `net10.0`.
+
+## D2 — Fixed three-level model (user choice)
+
+Country (ISO 3166-1: alpha-2 is the key, alpha-3 is also stored) → Subdivision (code
+maintainer-defined, ISO 3166-2 recommended, e.g. `AU-NSW`; see D10) → Locality. Postcode ↔ locality is many-to-many. An arbitrary-depth hierarchy was
+considered and rejected: it fits AU/NZ/US and most countries without one, and it keeps the queries
+flat.
+
+Identity rules that follow from real data:
+- One postcode can span several localities **and several subdivisions** (AU 2620 covers NSW and
+  ACT).
+- One locality can have several postcodes.
+- The same locality name can appear in several subdivisions.
+- Locality identity is therefore `(country, subdivision, normalized postcode, normalized name)`,
+  never the name alone. There is **no surrogate identifier** (D13).
+
+`CountryInfo` records the country's shape (`PostcodePattern`, `PostcodeRequired`,
+`HasSubdivisions`), so validation can work for countries that lack postcodes or subdivisions.
+
+## D3 — Query surface: validate, lookup/list, search (user choice)
+
+- **List/lookup:** countries; a country's subdivisions; localities by postcode; postcodes by
+  locality.
+- **Search/autocomplete:** prefix search on the normalized locality name within a country, which
+  can be narrowed to a subdivision. Postgres adds `pg_trgm` similarity for fuzzy matching. SQLite is
+  prefix-only, and that difference is documented, not hidden.
+- **Validate:** given an `AddressCandidate` (country, subdivision, locality, postcode), check each
+  component on its own and then the combination. The result reports:
+  - the outcome per component;
+  - the canonical spelling and casing;
+  - suggestions (e.g. the postcodes the locality actually has, or the subdivision the
+    locality/postcode pair belongs to).
+
+  Sal **never auto-corrects silently**. The calling application decides what to do with a
+  suggestion.
+
+## D4 — Name normalization
+
+`INameNormalizer`: trim, collapse internal whitespace, case-fold (invariant) and strip diacritics.
+The normalized form is **stored** next to the display name, so matching and prefix search are
+index lookups and not per-row computation. Per-country abbreviation rules (`St` ↔ `Saint`, `Mt` ↔
+`Mount`) are an extension point and are not in v1.
+
+Postcodes are part of the locality key too, so `NormalizePostcode` trims, collapses whitespace and
+upper-cases (`sw1a  1aa` matches `SW1A 1AA`).
+
+## D5 — No history; retirement, and deletion of localities (user directive; revised by D13)
+
+Full history (effective dating) is **not** required.
+- Countries and subdivisions are retired (`Retired` UTC timestamp), never deleted. A retired record
+  can be reinstated.
+- Localities can be retired too, and they can also be **deleted**, by an administrator or by an
+  import (D13).
+- Validation reports a match on a retired record as `RETIRED`. A deleted locality is simply
+  `UNKNOWN`.
+- For an audit trail, see D7.
+
+## D6 — Per-country dataset version for client-side caching (user directive)
+
+- `CountryInfo.CurrentVersion` is a UTC timestamp, bumped in the **same transaction** as every
+  insert, update, retire, reinstate or import that touches the country. An import bumps it once,
+  not once per row.
+- **Strictly increasing:** the new value is `max( utcNow, previous + 1 tick )`. Two writes in the
+  same tick, or a host clock that went backwards, therefore cannot give one version two meanings.
+  - `DatasetVersions.Next( previous, utcNow )` in `Pug.Sal.Data.Abstractions` is the single
+    implementation, shared by both stores.
+- **Stored as numeric text (user directive, 2026-10-09).** Every version-valued column
+  (`country.currentVersion`, `importRun.datasetVersion`, `locality.stamped`) holds the UTC
+  timestamp's digits to the tick, `yyyyMMddHHmmssfffffff` (`DatasetVersions.TextFormat`, e.g.
+  `202610091030001234567`).
+  - It is fixed width, so text order is time order, and exact to the tick in every store.
+  - That replaces a brief one-microsecond step chosen for Postgres `timestamptz` precision. The
+    version no longer depends on a store's own timestamp type.
+  - The API still carries the version as a UTC `DateTime`. `ToText`/`FromText` convert.
+- **Every read result carries the version it was read at** (`Versioned<T>`, and
+  `ValidationResult.DatasetVersion`). The version is read in the same session as the data, so it
+  never runs ahead of the data it describes.
+- Clients revalidate cheaply with `GetCountryVersionsAsync`, or over HTTP with
+  `ETag`/`If-None-Match` (304). A ready-made caching client is a later addition. The contract only
+  has to make one possible.
+
+## D7 — Host-supplied event broker for audit (user directive)
+
+There is no event-broker abstraction anywhere in the Pug ecosystem, so Sal defines
+`ILocalityChangePublisher` in Abstractions. The host may register one, and if it does not, a no-op
+publisher is used.
+
+- After commit, every write publishes `LocalityChange { Country, EntityType, Key, Kind, Actor
+  (ActionContext<Reference>), DatasetVersion }`.
+- **An import is a different event (user directive, 2026-10-09).** It publishes its `ImportRun`
+  through `ILocalityChangePublisher.PublishImportAsync`, once, after commit. The event carries the
+  identifier, country, importer, source, the counts `Added`, `Reinstated`, `Deleted` and
+  `Unchanged`, the dataset version and the performer.
+  - Its rows publish no `LocalityChange`, so `ChangeEntityTypes.IMPORT` and `ChangeKinds.IMPORTED`
+    are gone.
+  - The `ImportRun` record doubles as the payload, so the stored run and the event cannot drift
+    apart.
+- Delivery is **best-effort after commit**. A publisher failure is logged and never rolls back or
+  fails the write. Audit is optional, so it must not be able to take the write path down. A
+  transactional outbox was considered and deferred; it can be added later behind the same
+  interface.
+
+## D8 — Every operation requires authentication and authorization (user directive)
+
+- **Reads included.** Facades authorize through the `ISecurityManager.CurrentPrincipal.
+  IsAuthorizedAsync( context, operation, NounQualifier, purpose )` path from
+  Pug.Application.Security, so any authentication and authorization mechanism works.
+- **No principal means refused.** Pug.Scheduling's coordinator lets an in-process call that has no
+  principal skip the check; Sal deliberately does not. An in-process consumer must carry a
+  principal, just as a remote one does.
+- **Endpoints** only require an authenticated caller and map `NotAuthorized` / `Unknown*Exception` /
+  `ArgumentException` to 403/404/400. The facades decide.
+- **Operations** (`SecurityOperations`): `VIEW`, `CREATE`, `MODIFY`, `RETIRE`, `IMPORT`. They live
+  in Abstractions, following the Scheduling precedent (D3 there).
+- **Resource: all countries only, for now (user directive).** Every check is made against
+  `ResourceQualifiers.AllCountries` = `{ Type = COUNTRY }`, unqualified like Scheduling's
+  `AnySchedule`. `Domain` is empty, because Sal's reference data is global, not tenant-scoped.
+  Operations that list countries are refused like any other when `VIEW` is not granted. Nothing is
+  filtered by grant.
+- **Country-specific permissions are deferred (user directive, 2026-10-07).** The user wants a
+  per-country deny to be able to override an all-countries grant. The
+  `Pug.Application.Security` `IsAuthorizedAsync` contract is boolean. Pug.Authorized does
+  distinguish Allowed, Denied and None, but its adapters return only `== Allowed`. So Sal cannot
+  tell "denied for AU" from "no AU-specific entry". If per-country permissions return, the chosen
+  model is **the provider resolves it**:
+  - Sal makes one check against `{ Type = COUNTRY, Identifier = <alpha-2> }`.
+  - The host's provider checks the country-specific entry first (a deny wins), then falls back to
+    the all-countries entry. That is Pug.Authorized's native resolution order.
+
+  Two alternatives were rejected:
+  - Exclusion grants: a separate `COUNTRY_EXCLUSION` resource.
+  - A three-state evaluator inside Sal: it would go around the Pug.Application.Security
+    abstraction.
+- **First host:** Entra ID. Authorization may come from Entra app roles via
+  `Pug.Application.Security.AzureADRoleProvider`, which the **host** wires behind its
+  `IAuthorizationProvider`. Sal does not reference it.
+
+## D9 — Importers are a pluggable family
+
+`IDatasetImporter` (keyed by name, `OrdinalIgnoreCase`) turns a source stream into records for one
+country. `IDatasetImporterRegistry` ships empty, and the host registers what it uses.
+`ImportCoordinator` applies one import to one country in a **single transaction** and records an
+`ImportRun` (importer, source label, dataset version, counts, actor). What the import does to the
+data is D13. The Merge/Replace modes first planned here were dropped.
+
+v1 ships a generic column-mapped `Pug.Sal.Importers.Csv`. Source-specific importers are separate
+packages.
+
+## D10 — Australia specifics
+
+- Postcode is `^\d{4}$` and required.
+- Subdivisions are the six states plus ACT and NT (ISO 3166-2:AU).
+- **Territories are the data maintainer's call (user directive).** Sal takes no position on the
+  external territories (Norfolk Island, Christmas Island, Cocos (Keeling) Islands; ISO 3166-1
+  NF/CX/CC, AU postcodes 2899/6798/6799) or Jervis Bay Territory (postcode 2540, no ISO 3166-2
+  code). The model must allow any choice the maintainer makes:
+  - A territory can be its own country (an `NF` country with a `^\d{4}$` postcode pattern), or a
+    subdivision or localities under `AU`.
+  - Subdivision codes are therefore **maintainer-defined**. ISO 3166-2 is the recommended
+    convention, not a check Sal enforces, so a code like `AU-JBT` is accepted.
+  - Postcodes are unique only within a country, so `AU` 2899 and `NF` 2899 can coexist.
+  - The AU fixture and CSV importer bake in no territory choice.
+
+## D11 — Stores
+
+- Dapper over `Pug.Application.Data` (`IApplicationData<IDataSession>`). The SQLite and Postgres
+  stores are kept in step.
+- All times are UTC. SQLite reads stamp `DateTimeKind.Utc` to match Postgres `timestamptz`
+  (Scheduling D18 found this defect after the fact, so it is designed in here).
+- The schema ships as `GetSchemaUpgradeScripts()` for DbUp.
+
+## D12 — Contract decisions made in phase 1
+
+- **"Locality" names the service surface (user directive, 2026-10-09).** The term "Geography" is
+  dropped: `ILocalityDirectory` (reads), `ILocalityAdministration` (writes),
+  `ILocalityChangePublisher` and `LocalityChange` (the admin write event). They cover countries
+  and subdivisions as well as localities; `LocalityChange.EntityType` says which.
+- **Definition + Info composition**, following Scheduling's `ScheduleInfo`:
+  - `XDefinition` is what a maintainer authors. `XInfo` adds what Sal maintains: `Retired`,
+    `Registration`, `LastUpdate`, plus `CurrentVersion` on countries.
+  - Writes take definitions and return the written record. Country-scoped writes wrap it in
+    `Versioned<T>` with the version the write produced.
+- **No `PostcodeInfo`.** The plan listed one. Instead, a postcode is a plain string, unique within
+  its country, and each locality record carries **one** postcode as part of its key (D13):
+  - A suburb served by several postcodes is one record per postcode.
+  - "Postcodes of a locality" is `GetLocalitiesAsync( name: … )`. "Localities of a postcode" is
+    `GetLocalitiesAsync( postcode: … )`.
+- **Imports are flat rows.** An `ImportRow` is one locality/postcode pair, which is what postcode
+  datasets look like, and so exactly one locality record. A row repeating an earlier row's key is
+  the same locality.
+  - **An import never creates, retires or deletes a subdivision (user directive, 2026-10-09).** A
+    row naming an unknown subdivision fails the **whole** import (`DatasetImportException`):
+    nothing is applied, bumped or published. Subdivisions are maintained through the admin API
+    before importing. `ImportRow` therefore has no subdivision name or type.
+  - **A retired subdivision does not fail the import (user directive, 2026-10-09).** Its rows are
+    imported like any other, and the subdivision stays retired. The import does not reinstate it.
+    Validation reports such an address with a `RETIRED` subdivision.
+  - Every other invalid row fails the whole import the same way: a subdivision missing where the
+    country `HasSubdivisions` (or present where it does not), a postcode missing where required,
+    or one not matching `PostcodePattern`.
+- **Validation of an unknown country throws** `UnknownCountryException`, as every country-scoped
+  operation does, rather than returning a country outcome of `UNKNOWN`. Consumers choose the
+  country from Sal's own list.
+- **Creating a duplicate throws** `DuplicateEntryException` (409 over HTTP), retired records
+  included: reinstate those instead. Retire and reinstate share the `RETIRE` operation.
+- **No cancellation tokens** on the facades or the publisher, matching Scheduling's contracts.
+
+## D13 — Localities keyed by name; imports make the country match the dataset (user directive)
+
+The user's proposal, reviewed for gaps (including a review from another session), then settled
+item by item.
+
+- **No locality identifier; the key is `(country, subdivision, postcode, name)`** (user
+  directive). Postcode and name are compared in their normalized forms
+  (`INameNormalizer.NormalizePostcode` / `Normalize`).
+  - A locality record is one locality/postcode pair, the same shape as a dataset row.
+  - A suburb served by several postcodes is several records.
+  - Same-named places within one subdivision (the review believed Queensland has several "Spring
+    Creek"s) are told apart by postcode, and can be retired or deleted separately.
+  - **Localities are never updated** (user directive). They are created, retired, reinstated or
+    deleted, so a correction (rename, re-postcode, move) is a delete and a create. `MODIFY` and
+    `UPDATED` apply to countries and subdivisions only.
+  - An import matches rows by the full key. A matched locality has its `LastUpdate` re-stamped
+    and is reinstated if retired. A row differing only in the casing or spacing of its name
+    matches the existing record; the display name stays as first created.
+  - Validation answers with canonical `AddressCandidate`s.
+- **Localities can be added, retired, reinstated and deleted** (`SecurityOperations.Delete`), but
+  not updated. Every one of those writes bumps the country version (D6). `Registration` and
+  `LastUpdate` are kept. `LastUpdate` records the last retirement, reinstatement, or import that
+  confirmed the locality.
+- **Imports always cover the whole country.** Whatever the dataset does not hold is **deleted**:
+  - Localities absent from the dataset are deleted, not retired. This reverses the first plan.
+  - That includes localities an administrator added by hand. The dataset is the country's single
+    source of truth.
+  - A locality the dataset holds that an administrator had retired is **reinstated**.
+  - Never import a dataset covering only part of a country: it would delete the rest.
+  - Imports never create, retire, reinstate or delete subdivisions. An unknown one fails the whole
+    import; a retired one is accepted and stays retired (D12).
+- **Unwanted rows are found by timestamp (user directive, 2026-10-09).** This replaces the
+  assistant's earlier run-stamp recommendation. The import upserts:
+  - A new locality is registered at the import's timestamp.
+  - Every existing locality the dataset holds, unchanged or reinstated, has its `LastUpdate`
+    re-stamped with the import's context.
+  - Every locality of the country whose **latest** of `Registration` and `LastUpdate` is earlier
+    than the import's timestamp is unwanted and deleted. The test is the latest of the two, not
+    either one: an existing locality's `Registration` always predates the import, even when the
+    import re-stamped it.
+  - So `LastUpdate` on a locality means "last retired, reinstated or confirmed by an import", not
+    "last changed".
+- **The import's timestamp is clock-safe (assistant's choice, needed by the directive above).**
+  - Every write uses the version it produces as its action timestamp:
+    `max( utcNow, previous + 1 tick )` (D6), taken under the country row lock.
+  - So every earlier write's timestamp is at or before the country's current version, and the
+    import's timestamp is strictly after it.
+  - The rule therefore cannot misclassify a row through clock skew between hosts or a clock going
+    backwards. An action timestamp may run a tick or so ahead of wall time; that is the cost.
+- **Admin writes wait for an import.** The import takes the country row lock first, and every
+  other write to the country bumps its version under the same lock, so they wait for it.
+- **Every import bumps the version and publishes its import event once** (D7). Even an import that adds, reinstates and
+  deletes nothing re-stamps `LastUpdate`, which reads expose, so cached reads must be invalidated.
+  This reverses the assistant's earlier "no bump for a no-op import" recommendation.
+- **The version stays a strictly increasing UTC timestamp** (D6). The review suggested a counter,
+  but the user asked for a timestamp, and the rule above relies on it being one.
+
+## D14 — One class implements both service interfaces (user directive, 2026-10-09)
+
+- `ILocalityDirectory` and `ILocalityAdministration` stay separate interfaces, so a consumer can
+  depend on reads only. Both are implemented by **one** class, not one class each:
+  - `LocalityService` in `Pug.Sal`. Phase 3 writes its read half, and phase 4 its admin half.
+  - `LocalityServiceClient` in `Pug.Sal.Client`.
+- DI registers that one instance under both interfaces.
+- Import mechanics may sit in an internal collaborator (the planned `ImportCoordinator`) that
+  `LocalityService` calls. That does not make it a second implementation of either interface.
+
+## D15 — Store design (phase 2, assistant's choices)
+
+- **The store holds no policy.** `IDataSession` does storage primitives only. These stay with the
+  caller (`LocalityService`): authorization, normalization, validation, version policy, key
+  de-duplication within a dataset, and choosing timestamps.
+- **The caller supplies normalized keys.** The store never normalizes. A locality is stored with
+  its display `postcode` and `name`, plus `postcodeKey` and `nameKey` from `INameNormalizer`.
+  `LocalityKey { Country, Subdivision, PostcodeKey, NameKey }` addresses a stored locality.
+- **"None" is stored as an empty string in key columns.** `subdivision` and `postcodeKey` hold `''`
+  when there is none, and the store maps that back to null. Both are therefore plain
+  `not null` primary-key columns, with the same semantics in SQLite and Postgres. Unique indexes
+  over nullable columns differ between them.
+- **Locking and versioning in one primitive.**
+  - `AdvanceVersionAsync( country, utcNow )` takes the country row's write lock first: an
+    `update` in both stores, which in SQLite takes the database write lock.
+  - It then reads the version, writes `DatasetVersions.Next`, and returns the new version, or
+    null for an unknown country.
+  - Every write transaction calls it first, then uses the returned value as its action
+    timestamp (D13).
+- **`stamped` column.** Each locality row keeps the latest of its `Registration` and `LastUpdate`
+  timestamps as a plain column, maintained by every write. An import's unwanted-row delete is
+  then `where country = @c and stamped < @importTimestamp`, using the `(country, stamped)` index.
+  `Registration` and `LastUpdate` themselves are JSON columns, as in Scheduling.
+- **Import upsert returns its outcome.** `UpsertImportedLocalityAsync` inserts a missing locality
+  or re-stamps an existing one (clearing `Retired`). It returns `Added`, `Reinstated` or
+  `Unchanged`, so the caller counts without a separate read.
+
+- **SQLite transactions: the session enlists itself (found in phase 2).**
+  - **The problem:** Microsoft.Data.Sqlite ignores ambient `System.Transactions`, so the
+    `TransactionScope` that `ExecuteAsync`/`PerformAsync` open gave no atomicity and no write lock.
+    Statements autocommitted, and concurrent version bumps returned duplicates.
+  - **The fix:** a session created inside a scope opens a real SQLite transaction. An
+    `EnlistVolatile` enlistment ties that transaction to the scope's outcome.
+    - It commits in **phase one** (`Prepare`), so a failed commit aborts the scope and its
+      `Dispose` throws. A commit in phase two would surface only after the scope reported
+      success.
+    - Closing the connection is deferred until the scope ends, because ApplicationData disposes
+      the session first.
+  - **Limits:** a nested `Required` scope gets its own connection and transaction. Committing in
+    phase one cannot be undone if another participant in the same scope fails, but Sal's units of
+    work enlist nothing else.
+  - **Postgres (phase 5):** Npgsql enlists in `TransactionScope` natively, so this workaround must
+    **not** be copied there. Verify it with a rollback test instead.
+  - **Scheduling has the same latent issue:** Pug.Scheduling's SQLite store has the same gap, and
+    its writes are not atomic on SQLite. Sal's fix is local to Sal.
+- **Timestamps in SQLite:**
+  - Version-valued columns use the digit text of D6.
+  - `importRun` has no separate performed-time column. Runs are ordered by `datasetVersion`,
+    which equals the `Performed` timestamp (D13).
+  - Other timestamps (`retired`) use Microsoft.Data.Sqlite's default text form,
+    `yyyy-MM-dd HH:mm:ss.FFFFFFF`, in UTC.
+  - `ActionContext` timestamps live in its JSON.
+- **Duplicate keys and missing parent countries** surface as `SqliteException`, unwrapped. The
+  service maps them in phase 4.
+
+## Verification conventions
+
+- **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
+  `dotnet test tests/Pug.Sal.Tests -m:1` green.
+- Tests run against real SQLite stores (a per-fixture temp DB, DbUp-migrated) with Australian
+  fixture data.
+- Postgres is checked with Testcontainers via `sg docker -c "…"`.
+
+## Phase status (pause for user review after every phase)
+
+- **0 Decisions:** this log, `CLAUDE.md`, `global.json`, `Directory.Build.props`. DONE.
+- **1 Models + Abstractions:** contracts only, build-gated. DONE, approved 2026-10-09.
+- **2 Data (SQLite).** DONE (Data.Abstractions, Data.SQLite, 28 store tests), awaiting review.
+- **3 Core read facade + normalizer.** Not started.
+- **4 Admin + import + events.** Not started.
+- **5 Postgres.** Not started.
+- **6 WebApi + Client + DI.** Not started.

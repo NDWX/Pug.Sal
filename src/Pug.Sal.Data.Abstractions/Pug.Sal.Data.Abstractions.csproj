@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Title>Pug.Sal.Data.Abstractions</Title>
+		<Description>Store contract for Pug.Sal: storage primitives for countries, subdivisions, localities and import runs.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Data</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Models/Pug.Sal.Models.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Pug.Application.Data.Common" Version="1.1.1" />
+	</ItemGroup>
+
+</Project>

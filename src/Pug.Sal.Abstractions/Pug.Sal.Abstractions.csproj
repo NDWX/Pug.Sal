@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
+		<Title>Pug.Sal.Abstractions</Title>
+		<Description>Abstractions for Pug.Sal: the read and administration facades, dataset importers, name normalization, change publishing and security constants.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Reference</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Models/Pug.Sal.Models.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Pug.Application.Security.Abstractions" Version="3.1.0" />
+	</ItemGroup>
+
+</Project>

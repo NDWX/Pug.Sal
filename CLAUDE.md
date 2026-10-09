@@ -1,0 +1,93 @@
+# Pug.Sal
+
+Reference-data microservice (part of the `Pug.*` family): countries, states/territories
+(subdivisions), suburbs (localities) and postcodes. It is the single source of truth that internal
+applications validate user address input against. Design rationale and phase status live in
+`docs/DECISIONS.md`. **Read it before making design changes**: every major shape here was explicitly
+decided with the user.
+
+## Build & test gate (completion gate — never declare done without it)
+
+```sh
+dotnet build Pug.Sal.slnx -warnaserror -m:1
+dotnet test tests/Pug.Sal.Tests -m:1
+```
+
+## Solution layout (planned; see the phase status in DECISIONS.md)
+
+| Project | Role |
+|---|---|
+| `Pug.Sal.Models` | `CountryInfo`, `SubdivisionInfo`, `LocalityInfo`, `Versioned<T>`, `AddressCandidate`, `ValidationResult`, `ImportRun`, `LocalityChange`, string-constant classes. |
+| `Pug.Sal.Abstractions` | `ILocalityDirectory` (reads), `ILocalityAdministration` (writes), `IDatasetImporter` + registry, `INameNormalizer`, `ILocalityChangePublisher`, security constants, domain exceptions. |
+| `Pug.Sal` | `LocalityService`, the one class implementing both `ILocalityDirectory` and `ILocalityAdministration` (D14): authorization, normalization, validation, version bumps, change publishing. Import mechanics in an internal `ImportCoordinator`. |
+| `Pug.Sal.Data.Abstractions` | Store `IDataSession` (storage primitives only, D15), `LocalityKey`, `DatasetVersions.Next`. |
+| `Pug.Sal.Data.SQLite` / `.Postgres` | Dapper stores + `GetSchemaUpgradeScripts()`. Keep them in step. |
+| `Pug.Sal.Importers.Csv` | Generic column-mapped CSV importer. |
+| `Pug.Sal.WebApi.Models` | Every HTTP surface contract. No ASP.NET dependency. |
+| `Pug.Sal.WebApi` | `MapSalEndpoints()` (`sal/…`). Authenticates only; the facades authorize. ETag/304 on reads. |
+| `Pug.Sal.Client` | `LocalityServiceClient`, one class implementing both interfaces over HTTP. Reproduces the service's exceptions. References Abstractions only. |
+| `Pug.Sal.DependencyInjection` | `AddSal`, `AddSalDatasetImporter<T>`, `AddSalChangePublisher<T>`. |
+
+## Domain invariants (do not regress)
+
+- **Every operation, reads included, is authenticated and authorized.**
+  - Facades check through `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync`.
+  - A missing principal is refused, never trusted (unlike Pug.Scheduling's coordinator).
+  - Every check is against `ResourceQualifiers.AllCountries` only.
+  - Country-specific permissions are deferred. If they return, the host's provider resolves them
+    (DECISIONS D8).
+  - Sal never references a concrete provider: Entra roles are wired by the host.
+- **Locality identity** is `(country, subdivision, normalized postcode, normalized name)`, with no
+  surrogate identifier. A locality record is one locality/postcode pair; a postcode may span
+  localities and subdivisions (AU 2620). Localities are never updated: they are created, retired,
+  reinstated or deleted.
+- **Validation never auto-corrects.** It reports outcomes per component, canonical forms and
+  suggestions.
+- **No history.** Countries and subdivisions are retired, never deleted. Localities may also be
+  deleted.
+- **Imports make the country match the dataset** (DECISIONS D13):
+  - Datasets cover the whole country.
+  - Absent localities are deleted, manual ones included. Retired ones present are reinstated.
+  - Imports never touch subdivisions. Any invalid row (unknown subdivision, bad postcode) fails
+    the whole import, and nothing is applied. A retired subdivision is accepted and stays retired.
+  - Upsert by timestamp. The import's timestamp is the new country version, taken under the
+    country lock. New rows are registered at it, and every other row the dataset holds has its
+    `LastUpdate` re-stamped to it.
+  - Unwanted rows are those whose latest of `Registration`/`LastUpdate` is earlier than it.
+  - Every write's action timestamp equals the version it produces.
+  - Every import bumps the version once.
+- **Country version:**
+  - `CountryInfo.CurrentVersion` is bumped in the same transaction as every write to that country,
+    once per import.
+  - It strictly increases: `max( utcNow, previous + 1 tick )`.
+  - Every version-valued column (`currentVersion`, `datasetVersion`, `stamped`) is stored as
+    numeric text `yyyyMMddHHmmssfffffff` (UTC), in every store (`DatasetVersions.ToText`).
+  - Every read returns the version it read at.
+- **Change events:** published after commit and best-effort. A publisher failure never fails or
+  rolls back a write. Admin writes publish a `LocalityChange`. An import publishes only its
+  `ImportRun` (counts included) through `PublishImportAsync`: a different event, not per-row
+  changes.
+- **Licensing** of datasets is the host's concern. Sal has no licence model.
+- **Territory placement** (e.g. whether AU external territories are their own countries or under
+  AU) is the data maintainer's choice. Subdivision codes are maintainer-defined (ISO 3166-2
+  recommended, not enforced), and postcodes are unique per country only.
+- **Times:** all UTC. SQLite reads stamp `DateTimeKind.Utc`.
+
+## Conventions
+
+- Tabs; block-scoped namespaces; spaces inside parens `Method( arg )`.
+- `.ConfigureAwait( false )` in library code.
+- `[DataContract]` records with the `#if NET5_0_OR_GREATER init/set` accessor pattern.
+- Data access via `ApplicationDataProvider.ExecuteAsync/PerformAsync( async ( session, context ) =>
+  …, context: new { … } )`.
+- Contracts multi-target `net6.0;net8.0;net10.0` (`LangVersion` 9); implementations are `net10.0`.
+- Shared package metadata lives in `Directory.Build.props`.
+- Tests: xUnit, per-fixture SQLite temp DBs migrated by DbUp, Moq only for `ISecurityManager`.
+- Postgres tests use Testcontainers via `sg docker -c "…"`.
+
+## Workflow requirement
+
+- Work proceeds in phases, with a **pause for user verification after every phase**. Current status
+  is at the end of `docs/DECISIONS.md`.
+- Delegation: at most one executor agent at a time, and no fan-out. The main session reviews the
+  diff and runs the gate itself.
