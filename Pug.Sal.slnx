@@ -3,6 +3,7 @@
   <Project Path="src/Pug.Sal.Data.SQLite/Pug.Sal.Data.SQLite.csproj" />
   <Project Path="src/Pug.Sal.Models/Pug.Sal.Models.csproj" />
   <Project Path="src/Pug.Sal.Abstractions/Pug.Sal.Abstractions.csproj" />
+  <Project Path="src/Pug.Sal/Pug.Sal.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/Pug.Sal.Tests/Pug.Sal.Tests.csproj" />
   </Folder>

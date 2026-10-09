@@ -391,6 +391,53 @@ reads, and the two interfaces get their own implementations.
   edited there, and the records are then regenerated with
   `python3 tools/genmodels.py src/Pug.Sal.Models`. `InfoProjections.cs` is hand-written.
 
+## D17 — Read facade and validation (phase 3, assistant's choices)
+
+- **Shared base.** `LocalityServiceBase` (public abstract, following Scheduling's `SchedulerBase`)
+  holds what both facades need:
+  - authorization;
+  - argument normalization;
+  - the reads over full records, each checking VIEW.
+
+  `LocalityDirectory` projects the results with `ToInfo()`. `LocalityAdministration` (phase 4)
+  returns them as they are. Authorization is checked **before** arguments are validated or
+  anything is looked up, so an unauthorized caller learns nothing.
+- **Argument forms:**
+  - Country codes are trimmed and upper-cased. Subdivision codes in lookups and filters are trimmed
+    and matched exactly.
+  - Postcode and name filters use their normalized forms. A blank filter means no filter.
+  - A blank locality name in a key lookup is an `ArgumentException`.
+- **Normalizer** (`NameNormalizer`):
+  - Names are trimmed, whitespace is collapsed, diacritics are stripped (FormD, non-spacing marks
+    dropped), and the result is upper-cased invariantly.
+  - Postcodes are trimmed, whitespace is collapsed, and they are upper-cased. A blank postcode
+    normalizes to null.
+- **Search:** a limit below 1 is an `ArgumentOutOfRangeException`, and the limit is capped at
+  `MaximumSearchLimit` (100). An unknown subdivision matches nothing.
+- **Validation** (`AddressValidation`, a pure function over evidence read in one session):
+  - **Subdivision** is matched by code, then by the code's part after `<country>-` (so `NSW`
+    matches `AU-NSW`), then by normalized name, each case-insensitively.
+  - **A blank optional postcode is `NOT_APPLICABLE`.** A blank required one is `MISSING`.
+    `PostcodePattern` must fully match the *normalized* postcode.
+  - **Combination** is `NOT_CHECKED` unless every component is `VALID`, `RETIRED` or
+    `NOT_APPLICABLE`. Otherwise it is:
+    - `VALID` when a current locality has the name, the matched subdivision and the given
+      postcode;
+    - **`RETIRED`** when only retired ones do;
+    - `MISMATCH` otherwise.
+  - Components that match both current and retired records report the current one.
+  - **`Match`** is given only when the result is valid. Its postcode is null when the candidate
+    gave none, because filling one in would be a correction.
+  - **Suggestions** are current localities under current subdivisions, at most 10, from the first
+    of these tiers that has any:
+    1. the name with the given postcode (any subdivision), then the name under the matched
+       subdivision;
+    2. the name anywhere;
+    3. the given postcode's localities under the matched subdivision;
+    4. the given postcode's localities anywhere.
+
+    A retired country gets no suggestions.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
@@ -409,7 +456,8 @@ make up the first commit.
 - **1 Models + Abstractions:** contracts only, build-gated. DONE, approved 2026-10-09.
 - **2 Data (SQLite).** DONE (Data.Abstractions, Data.SQLite, 28 store tests).
 - **D16 amendment** (full records, administration reads, split implementations). DONE.
-- **3 Core read facade + normalizer.** Not started.
+- **3 Core read facade + normalizer.** DONE (`LocalityServiceBase`, `LocalityDirectory`,
+  `AddressValidation`, `NameNormalizer`; AU fixture tests; 86 tests in all).
 - **4 Admin + import + events.** Not started.
 - **5 Postgres.** Not started.
 - **6 WebApi + Client + DI.** Not started.

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Title>Pug.Sal</Title>
+		<Description>Pug.Sal facades: the locality directory (reads and address validation) and locality administration, with name normalization.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Reference</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Abstractions/Pug.Sal.Abstractions.csproj" />
+		<ProjectReference Include="../Pug.Sal.Data.Abstractions/Pug.Sal.Data.Abstractions.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Pug.Application.Data.Extensions" Version="1.0.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="Pug.Sal.Tests" />
+	</ItemGroup>
+
+</Project>
