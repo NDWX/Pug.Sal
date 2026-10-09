@@ -1,0 +1,103 @@
+name: Release
+
+# sal-v<X.Y.Z>       release X.Y.Z: packages pushed to nuget.org, then a draft GitHub release
+# sal-pre-v<X.Y.Z>   pre-release X.Y.Z-pre.<UTC stamp>: the same, the draft marked pre-release
+# workflow_dispatch  dry run: tests and packs <Version>-dev.<stamp>, keeps the packages as a
+#                    workflow artifact, publishes nothing (even when dispatched from a tag)
+# The tag's X.Y.Z must equal <Version> in Directory.Build.props. Everything but the plumbing lives in
+# build/build.ps1; see RELEASING.md.
+on:
+  push:
+    tags:
+      - 'sal-v*'
+      - 'sal-pre-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # What is being built, decided once so every job agrees, including the pre-release stamp. A tag
+  # whose version differs from <Version> fails here, before anything is built.
+  identify:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.identify.outputs.version }}
+      prerelease: ${{ steps.identify.outputs.prerelease }}
+      release: ${{ steps.identify.outputs.release }}
+      tag: ${{ steps.identify.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: identify
+        shell: pwsh
+        env:
+          # only a tag push is a release: a dry run dispatched from a tag ref still builds -dev
+          REF: ${{ github.event_name == 'push' && github.ref || '' }}
+        run: ./build/build.ps1 -Stage identify -Ref $env:REF
+
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  pack:
+    needs: identify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: Pack and checksum
+        shell: pwsh
+        run: |
+          ./build/build.ps1 -Stage pack -Version '${{ needs.identify.outputs.version }}'
+          ./build/build.ps1 -Stage checksums
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages
+          path: artifacts/dist
+          if-no-files-found: error
+          overwrite: true
+
+  # Pushing to nuget.org cannot be undone (a version can only be unlisted), so it runs in the
+  # 'release' environment, where required reviewers can gate it, and only once the tests passed.
+  nuget:
+    if: github.event_name == 'push' && needs.identify.outputs.release == 'true'
+    needs: [identify, test, pack]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: artifacts/dist
+      - name: Push to nuget.org
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_APIKEY }}
+        run: ./build/build.ps1 -Stage push
+
+  # A draft GitHub release for the tag, holding the packages and SHA256SUMS. It stays a draft: the
+  # maintainer reads it and publishes it by hand.
+  release:
+    if: github.event_name == 'push' && needs.identify.outputs.release == 'true'
+    needs: [identify, nuget]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PRERELEASE: ${{ needs.identify.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: packages
+          path: artifacts/dist
+      - name: Draft release
+        shell: pwsh
+        run: ./build/build.ps1 -Stage release -Tag '${{ needs.identify.outputs.tag }}' -Version '${{ needs.identify.outputs.version }}' -Prerelease:($env:PRERELEASE -eq 'true')

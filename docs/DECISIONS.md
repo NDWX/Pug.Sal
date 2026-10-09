@@ -591,6 +591,27 @@ reads, and the two interfaces get their own implementations.
   - `AddSalChangePublisher<T>()` replaces the publisher, whether it is called before or after
     `AddSal`.
 
+## D21 — CI and release pipeline (following Pug.Sqetch's)
+
+- **All logic is in `build/build.ps1`.** The stages are `identify`, `test`, `pack`, `checksums`,
+  `push` and `release`, and they run the same on a workstation. The workflows hold only triggers,
+  runners, permissions and artifact handling. A composite setup action pins the SDK through
+  `global.json`.
+- **CI** (`ci.yml`) runs the completion gate on every branch push. `release.yml` reuses it through
+  `workflow_call`.
+- **Tag-driven releases:**
+  - `sal-v<X.Y.Z>` builds `X.Y.Z`. `sal-pre-v<X.Y.Z>` builds `X.Y.Z-pre.<UTC stamp>`.
+  - X.Y.Z must equal the single `<Version>` in `Directory.Build.props`. That replaces the old fixed
+    `PackageVersion`/`AssemblyVersion`/`FileVersion`, which made `-p:Version` ineffective.
+  - A tag push publishes to nuget.org: the `push` job, in the `release` environment, using the
+    `NUGET_APIKEY` secret as the other Pug repositories do. It then creates a draft GitHub release
+    with the packages and `SHA256SUMS`.
+  - `workflow_dispatch` is a dry run that publishes nothing.
+- **Differences from Sqetch:**
+  - Sal ships libraries, so there are no per-platform builds, installers, smoke tests or signing.
+  - Sqetch defers its nuget.org push. Sal pushes, because publishing the packages is the point of a
+    library release.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**

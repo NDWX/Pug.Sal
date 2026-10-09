@@ -1,0 +1,18 @@
+name: Set up the build
+description: .NET SDK as pinned by global.json, and PowerShell 7 for build/build.ps1
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@v6
+      with:
+        global-json-file: global.json
+
+    # pwsh ships on the GitHub-hosted images; some arm64 images lack it
+    - name: Ensure PowerShell
+      shell: bash
+      run: |
+        if ! command -v pwsh > /dev/null; then
+          dotnet tool install --global PowerShell
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+        fi

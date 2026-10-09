@@ -14,6 +14,11 @@ dotnet test tests/Pug.Sal.Tests -m:1
 sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1"   # Postgres via Testcontainers
 ```
 
+The same gate as one command, which CI runs on every branch push:
+`pwsh build/build.ps1 -Stage test -DockerViaSg` (`-DockerViaSg` locally only). Releases are
+tag-driven (`sal-v<X.Y.Z>`, `sal-pre-v<X.Y.Z>`, where X.Y.Z equals `<Version>` in
+`Directory.Build.props`). The workflows only call `build/build.ps1`; see `RELEASING.md`.
+
 ## Solution layout (planned; see the phase status in DECISIONS.md)
 
 | Project | Role |
