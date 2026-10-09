@@ -74,6 +74,13 @@ Without `-Version`, `pack` builds `<Version>-dev.<stamp>`. Output goes to `artif
 
 ## One-time setup
 
+0. **Docker Hub login for the tests.** CI logs in to Docker Hub before the tests, because anonymous
+   pulls are capped per IP and GitHub's shared runners exhaust the cap. Two settings hold the
+   login:
+   - the `DOCKERHUB_USERNAME` repository **variable**;
+   - the `DOCKERHUB_TOKEN` repository **secret**, a Docker Hub personal access token with
+     read-only access to public repositories.
+
 1. **NuGet API key.** Store it as the `NUGET_APIKEY` secret, the name the other Pug repositories
    use. It can be a repository secret, an organization secret, or a secret of the `release`
    environment. It needs push rights for the `Pug.Sal*` package IDs.

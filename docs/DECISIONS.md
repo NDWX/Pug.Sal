@@ -607,6 +607,13 @@ reads, and the two interfaces get their own implementations.
     `NUGET_APIKEY` secret as the other Pug repositories do. It then creates a draft GitHub release
     with the packages and `SHA256SUMS`.
   - `workflow_dispatch` is a dry run that publishes nothing.
+- **Docker Hub pulls are authenticated in CI.** Anonymous pulls are capped per IP, and shared
+  GitHub runners exhaust the cap. `ci.yml` logs in with `docker/login-action`, and Testcontainers
+  then pulls `postgres:17-alpine` and Ryuk with that login. The credentials are the
+  `DOCKERHUB_USERNAME` variable and the `DOCKERHUB_TOKEN` secret, which `release.yml` passes to
+  `ci.yml` with `secrets: inherit`.
+  - Mirrors were tried and dropped. `public.ecr.aws` worked locally but reported the image as not
+    found on GitHub's runners.
 - **Differences from Sqetch:**
   - Sal ships libraries, so there are no per-platform builds, installers, smoke tests or signing.
   - Sqetch defers its nuget.org push. Sal pushes, because publishing the packages is the point of a

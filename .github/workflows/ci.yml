@@ -21,5 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
+      # Anonymous Docker Hub pulls are capped per IP, which shared runners exhaust; logged-in pulls
+      # count against the account instead. Testcontainers uses this login for the Postgres and Ryuk
+      # images. DOCKERHUB_USERNAME is a repository variable, DOCKERHUB_TOKEN a read-only access
+      # token secret (RELEASING.md).
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
       # Docker is present on the runner, so the Testcontainers PostgreSQL tests run for real
       - run: pwsh build/build.ps1 -Stage test
