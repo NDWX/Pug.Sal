@@ -81,8 +81,17 @@ Without `-Version`, `pack` builds `<Version>-dev.<stamp>`. Output goes to `artif
    - the `DOCKERHUB_TOKEN` repository **secret**, a Docker Hub personal access token with
      read-only access to public repositories.
 
-1. **NuGet API key.** Store it as the `NUGET_APIKEY` secret, the name the other Pug repositories
-   use. It can be a repository secret, an organization secret, or a secret of the `release`
-   environment. It needs push rights for the `Pug.Sal*` package IDs.
+1. **NuGet trusted publishing.** The workflow stores no API key. Its `nuget` job exchanges its
+   GitHub OIDC token for a nuget.org API key that expires after an hour (`NuGet/login`). Set it up
+   once:
+   - On nuget.org, under your account's **Trusted Publishing**, add a GitHub Actions policy:
+     owner `NDWX`, repository `Pug.Sal`, workflow file `release.yml`, environment `release`. The
+     policy's owner (you or an organization) must own the `Pug.Sal*` package IDs.
+   - Add the `NUGET_USER` repository **variable**: the nuget.org profile name (not the email
+     address) that owns the policy.
+
+   Renaming `release.yml` or the `release` environment breaks the policy match, and the login
+   step fails. The `NUGET_APIKEY` secret is no longer used: delete it, and revoke the key on
+   nuget.org if nothing else uses it.
 2. **`release` environment (optional).** GitHub creates it on first use. Add required reviewers to
    it to approve each push to nuget.org.

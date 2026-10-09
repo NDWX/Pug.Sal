@@ -64,11 +64,17 @@ jobs:
 
   # Pushing to nuget.org cannot be undone (a version can only be unlisted), so it runs in the
   # 'release' environment, where required reviewers can gate it, and only once the tests passed.
+  # Trusted publishing: no stored API key. NuGet/login trades this job's OIDC token for a key that
+  # lives an hour, which nuget.org issues only if a trusted publishing policy matches this
+  # repository, this workflow file and the 'release' environment.
   nuget:
     if: github.event_name == 'push' && needs.identify.outputs.release == 'true'
     needs: [identify, test, pack]
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
@@ -76,10 +82,15 @@ jobs:
         with:
           name: packages
           path: artifacts/dist
+      - name: Log in to nuget.org
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
       - name: Push to nuget.org
         shell: pwsh
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_APIKEY }}
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: ./build/build.ps1 -Stage push
 
   # A draft GitHub release for the tag, holding the packages and SHA256SUMS. It stays a draft: the

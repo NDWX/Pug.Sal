@@ -603,9 +603,14 @@ reads, and the two interfaces get their own implementations.
   - `sal-v<X.Y.Z>` builds `X.Y.Z`. `sal-pre-v<X.Y.Z>` builds `X.Y.Z-pre.<UTC stamp>`.
   - X.Y.Z must equal the single `<Version>` in `Directory.Build.props`. That replaces the old fixed
     `PackageVersion`/`AssemblyVersion`/`FileVersion`, which made `-p:Version` ineffective.
-  - A tag push publishes to nuget.org: the `push` job, in the `release` environment, using the
-    `NUGET_APIKEY` secret as the other Pug repositories do. It then creates a draft GitHub release
-    with the packages and `SHA256SUMS`.
+  - A tag push publishes to nuget.org: the `nuget` job, in the `release` environment. It then
+    creates a draft GitHub release with the packages and `SHA256SUMS`.
+  - **nuget.org trusted publishing** (user directive, 2026-10-09). No API key is stored: the
+    `nuget` job's OIDC token is exchanged through `NuGet/login` for a key that lives an hour.
+    nuget.org issues it only for a policy matching `NDWX/Pug.Sal`, `release.yml` and the `release`
+    environment. The login user is the `NUGET_USER` variable. This replaced the `NUGET_APIKEY`
+    secret the other Pug repositories use. `build.ps1 -Stage push` still takes `NUGET_API_KEY`
+    from the environment, so a manual push with an ordinary key works the same.
   - `workflow_dispatch` is a dry run that publishes nothing.
 - **Docker Hub pulls are authenticated in CI.** Anonymous pulls are capped per IP, and shared
   GitHub runners exhaust the cap. `ci.yml` logs in with `docker/login-action`, and Testcontainers
