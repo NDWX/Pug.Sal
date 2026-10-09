@@ -8,6 +8,8 @@
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- Every run of this project, local or CI, takes its images from outside Docker Hub. -->
+    <RunSettingsFilePath>$(MSBuildProjectDirectory)/postgres.runsettings</RunSettingsFilePath>
   </PropertyGroup>
 
   <ItemGroup>

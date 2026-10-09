@@ -607,6 +607,13 @@ reads, and the two interfaces get their own implementations.
     `NUGET_APIKEY` secret as the other Pug repositories do. It then creates a draft GitHub release
     with the packages and `SHA256SUMS`.
   - `workflow_dispatch` is a dry run that publishes nothing.
+- **No Docker Hub pulls in tests.** Anonymous Docker Hub pulls are capped per IP over hours, and
+  shared GitHub runners exhaust the cap. The Postgres tests take
+  `public.ecr.aws/docker/library/postgres:17-alpine`, AWS's public mirror of the official image.
+  Testcontainers' Ryuk comes from `ghcr.io/testcontainers/ryuk` (set in `postgres.runsettings`;
+  keep its tag in step with the Testcontainers package). Both registries throttle anonymous
+  pulls per second at most, with no cap over hours. If they ever throttle, the fallback is a
+  Docker Hub login in CI with a token kept in repository secrets.
 - **Differences from Sqetch:**
   - Sal ships libraries, so there are no per-platform builds, installers, smoke tests or signing.
   - Sqetch defers its nuget.org push. Sal pushes, because publishing the packages is the point of a
