@@ -211,7 +211,7 @@ namespace Pug.Sal.Data.SQLite
 		private static ActionContext<Reference>? AsUtc( ActionContext<Reference>? context ) =>
 			context is null ? null : new ActionContext<Reference> { Actor = context.Actor, Timestamp = AsUtc( context.Timestamp ) };
 
-		private static CountryInfo Compose( CountryRow row ) =>
+		private static Country Compose( CountryRow row ) =>
 			new()
 			{
 				Definition = new CountryDefinition
@@ -229,7 +229,7 @@ namespace Pug.Sal.Data.SQLite
 				LastUpdate = AsUtc( row.lastUpdate )!
 			};
 
-		private static SubdivisionInfo Compose( SubdivisionRow row ) =>
+		private static Subdivision Compose( SubdivisionRow row ) =>
 			new()
 			{
 				Definition = new SubdivisionDefinition
@@ -245,7 +245,7 @@ namespace Pug.Sal.Data.SQLite
 			};
 
 		// '' in the subdivision column means none.
-		private static LocalityInfo Compose( LocalityRow row ) =>
+		private static Locality Compose( LocalityRow row ) =>
 			new()
 			{
 				Definition = new LocalityDefinition
@@ -277,7 +277,7 @@ namespace Pug.Sal.Data.SQLite
 
 		// == Countries ==
 
-		public Task InsertCountryAsync( CountryInfo country )
+		public Task InsertCountryAsync( Country country )
 		{
 			return Connection.ExecuteAsync(
 					$@"insert into country({CountryColumns})
@@ -299,7 +299,7 @@ namespace Pug.Sal.Data.SQLite
 				);
 		}
 
-		public async Task<CountryInfo?> GetCountryAsync( string country )
+		public async Task<Country?> GetCountryAsync( string country )
 		{
 			CountryRow? row = await Connection.QueryFirstOrDefaultAsync<CountryRow?>(
 									$"select {CountryColumns} from country where code = @country;",
@@ -309,7 +309,7 @@ namespace Pug.Sal.Data.SQLite
 			return row is null ? null : Compose( row );
 		}
 
-		public async Task<IEnumerable<CountryInfo>> GetCountriesAsync( bool includeRetired )
+		public async Task<IEnumerable<Country>> GetCountriesAsync( bool includeRetired )
 		{
 			IEnumerable<CountryRow> rows = await Connection.QueryAsync<CountryRow>(
 													$@"select {CountryColumns} from country
@@ -393,7 +393,7 @@ namespace Pug.Sal.Data.SQLite
 
 		// == Subdivisions ==
 
-		public Task InsertSubdivisionAsync( SubdivisionInfo subdivision )
+		public Task InsertSubdivisionAsync( Subdivision subdivision )
 		{
 			return Connection.ExecuteAsync(
 					$@"insert into subdivision({SubdivisionColumns})
@@ -411,7 +411,7 @@ namespace Pug.Sal.Data.SQLite
 				);
 		}
 
-		public async Task<SubdivisionInfo?> GetSubdivisionAsync( string country, string subdivision )
+		public async Task<Subdivision?> GetSubdivisionAsync( string country, string subdivision )
 		{
 			SubdivisionRow? row = await Connection.QueryFirstOrDefaultAsync<SubdivisionRow?>(
 									$"select {SubdivisionColumns} from subdivision where country = @country and code = @subdivision;",
@@ -421,7 +421,7 @@ namespace Pug.Sal.Data.SQLite
 			return row is null ? null : Compose( row );
 		}
 
-		public async Task<IEnumerable<SubdivisionInfo>> GetSubdivisionsAsync( string country, bool includeRetired )
+		public async Task<IEnumerable<Subdivision>> GetSubdivisionsAsync( string country, bool includeRetired )
 		{
 			IEnumerable<SubdivisionRow> rows = await Connection.QueryAsync<SubdivisionRow>(
 													$@"select {SubdivisionColumns} from subdivision
@@ -464,7 +464,7 @@ namespace Pug.Sal.Data.SQLite
 
 		// == Localities ==
 
-		public Task InsertLocalityAsync( LocalityInfo locality, string? postcodeKey, string nameKey )
+		public Task InsertLocalityAsync( Locality locality, string? postcodeKey, string nameKey )
 		{
 			return Connection.ExecuteAsync(
 					$@"insert into locality({LocalityColumns}, postcodeKey, nameKey, stamped)
@@ -474,7 +474,7 @@ namespace Pug.Sal.Data.SQLite
 				);
 		}
 
-		private static object InsertParameters( LocalityInfo locality, string? postcodeKey, string nameKey ) =>
+		private static object InsertParameters( Locality locality, string? postcodeKey, string nameKey ) =>
 			new
 			{
 				country = locality.Definition.Country,
@@ -489,7 +489,7 @@ namespace Pug.Sal.Data.SQLite
 				stamped = DatasetVersions.ToText( locality.Registration.Timestamp )
 			};
 
-		public async Task<LocalityInfo?> GetLocalityAsync( LocalityKey key )
+		public async Task<Locality?> GetLocalityAsync( LocalityKey key )
 		{
 			LocalityRow? row = await Connection.QueryFirstOrDefaultAsync<LocalityRow?>(
 									$@"select {LocalityColumns} from locality
@@ -510,7 +510,7 @@ namespace Pug.Sal.Data.SQLite
 				nameKey = key.NameKey,
 			};
 
-		public async Task<IEnumerable<LocalityInfo>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, bool includeRetired )
+		public async Task<IEnumerable<Locality>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, bool includeRetired )
 		{
 			string filter = "country = @country";
 
@@ -535,7 +535,7 @@ namespace Pug.Sal.Data.SQLite
 			return rows.Select( Compose ).ToList();
 		}
 
-		public async Task<IEnumerable<LocalityInfo>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, int limit )
+		public async Task<IEnumerable<Locality>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, int limit )
 		{
 			// A substr comparison rather than LIKE, so '%', '_' and any escape character in the
 			// prefix are taken literally (and the match is case-sensitive, like Postgres LIKE). The
@@ -591,7 +591,7 @@ namespace Pug.Sal.Data.SQLite
 
 		// == Imports ==
 
-		public async Task<LocalityUpsertOutcome> UpsertImportedLocalityAsync( LocalityInfo locality, string? postcodeKey, string nameKey, ActionContext<Reference> context )
+		public async Task<LocalityUpsertOutcome> UpsertImportedLocalityAsync( Locality locality, string? postcodeKey, string nameKey, ActionContext<Reference> context )
 		{
 			LocalityKey key = new( locality.Definition.Country, locality.Definition.Subdivision, postcodeKey, nameKey );
 

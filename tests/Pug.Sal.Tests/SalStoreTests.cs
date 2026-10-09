@@ -31,7 +31,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	private static ActionContext<Reference> Context( DateTime timestamp, string actor = "alice" ) =>
 		new() { Actor = new Reference { Type = "USER", Identifier = actor }, Timestamp = timestamp };
 
-	private static CountryInfo Country( string code, bool subdivisions = true, DateTime? version = null ) =>
+	private static Country NewCountryRecord( string code, bool subdivisions = true, DateTime? version = null ) =>
 		new()
 		{
 			Definition = new CountryDefinition
@@ -47,7 +47,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 			Registration = Context( Base )
 		};
 
-	private static SubdivisionInfo Subdivision( string country, string code, string name, DateTime? retired = null ) =>
+	private static Subdivision NewSubdivisionRecord( string country, string code, string name, DateTime? retired = null ) =>
 		new()
 		{
 			Definition = new SubdivisionDefinition { Country = country, Code = code, Name = name, Type = SubdivisionTypes.State },
@@ -55,7 +55,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 			Registration = Context( Base )
 		};
 
-	private static LocalityInfo Locality( string country, string? subdivision, string? postcode, string name,
+	private static Locality NewLocalityRecord( string country, string? subdivision, string? postcode, string name,
 										DateTime? registered = null, DateTime? retired = null ) =>
 		new()
 		{
@@ -73,10 +73,10 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	// Test keys: upper-cased name, postcode as given.
 	private static string Key( string name ) => name.ToUpperInvariant();
 
-	private static LocalityKey KeyOf( LocalityInfo locality ) =>
+	private static LocalityKey KeyOf( Locality locality ) =>
 		new( locality.Definition.Country, locality.Definition.Subdivision, locality.Definition.Postcode, Key( locality.Definition.Name ) );
 
-	private Task InsertAsync( LocalityInfo locality ) =>
+	private Task InsertAsync( Locality locality ) =>
 		_fixture.ApplicationData.PerformAsync(
 				async ( session, context ) =>
 					await session.InsertLocalityAsync( context.locality, context.locality.Definition.Postcode, Key( context.locality.Definition.Name ) ),
@@ -94,19 +94,19 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 
 		await WriteAsync( async session =>
 		{
-			await session.InsertCountryAsync( Country( code ) );
-			await session.InsertSubdivisionAsync( Subdivision( code, "NSW", "New South Wales" ) );
-			await session.InsertSubdivisionAsync( Subdivision( code, "ACT", "Australian Capital Territory" ) );
-			await session.InsertSubdivisionAsync( Subdivision( code, "QLD", "Queensland", retired: Base.AddDays( 1 ) ) );
+			await session.InsertCountryAsync( NewCountryRecord( code ) );
+			await session.InsertSubdivisionAsync( NewSubdivisionRecord( code, "NSW", "New South Wales" ) );
+			await session.InsertSubdivisionAsync( NewSubdivisionRecord( code, "ACT", "Australian Capital Territory" ) );
+			await session.InsertSubdivisionAsync( NewSubdivisionRecord( code, "QLD", "Queensland", retired: Base.AddDays( 1 ) ) );
 		} );
 
-		await InsertAsync( Locality( code, "NSW", "2000", "Sydney" ) );
-		await InsertAsync( Locality( code, "ACT", "2600", "Parkes" ) );
-		await InsertAsync( Locality( code, "NSW", "2620", "Environa" ) );
-		await InsertAsync( Locality( code, "ACT", "2620", "Hume" ) );
-		await InsertAsync( Locality( code, "QLD", "4000", "Spring Creek" ) );
-		await InsertAsync( Locality( code, "QLD", "4370", "Spring Creek" ) );
-		await InsertAsync( Locality( code, "NSW", "2001", "Sydney Retired", retired: Base.AddHours( 2 ) ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Sydney" ) );
+		await InsertAsync( NewLocalityRecord( code, "ACT", "2600", "Parkes" ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2620", "Environa" ) );
+		await InsertAsync( NewLocalityRecord( code, "ACT", "2620", "Hume" ) );
+		await InsertAsync( NewLocalityRecord( code, "QLD", "4000", "Spring Creek" ) );
+		await InsertAsync( NewLocalityRecord( code, "QLD", "4370", "Spring Creek" ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2001", "Sydney Retired", retired: Base.AddHours( 2 ) ) );
 
 		return ( code, Array.Empty<string>() );
 	}
@@ -114,7 +114,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	[Fact]
 	public async Task SchemaMigrates()
 	{
-		IEnumerable<CountryInfo> countries = await ReadAsync( s => s.GetCountriesAsync( true ) );
+		IEnumerable<Country> countries = await ReadAsync( s => s.GetCountriesAsync( true ) );
 
 		Assert.NotNull( countries );
 	}
@@ -124,14 +124,14 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		string code = NewCountry();
 		DateTime version = Base.AddTicks( 1230 );
-		CountryInfo country = Country( code, version: version ) with
+		Country country = NewCountryRecord( code, version: version ) with
 		{
 			Retired = Base.AddDays( 3 ).AddTicks( 70 ),
 			LastUpdate = Context( Base.AddDays( 2 ).AddTicks( 10 ), "bob" )
 		};
 
 		await WriteAsync( s => s.InsertCountryAsync( country ) );
-		CountryInfo? read = await ReadAsync( s => s.GetCountryAsync( code ) );
+		Country? read = await ReadAsync( s => s.GetCountryAsync( code ) );
 
 		Assert.NotNull( read );
 		Assert.Equal( country.Definition, read.Definition );
@@ -155,10 +155,10 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task CountryWithoutSubdivisionsOrPostcodesRoundTripsNulls()
 	{
 		string code = NewCountry();
-		CountryInfo country = Country( code, subdivisions: false );
+		Country country = NewCountryRecord( code, subdivisions: false );
 
 		await WriteAsync( s => s.InsertCountryAsync( country ) );
-		CountryInfo? read = await ReadAsync( s => s.GetCountryAsync( code ) );
+		Country? read = await ReadAsync( s => s.GetCountryAsync( code ) );
 
 		Assert.Equal( country.Definition, read!.Definition );
 		Assert.Null( read.Definition.PostcodePattern );
@@ -180,8 +180,8 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		string b = NewCountry();
 		await WriteAsync( async s =>
 		{
-			await s.InsertCountryAsync( Country( b ) with { Retired = Base } );
-			await s.InsertCountryAsync( Country( a ) );
+			await s.InsertCountryAsync( NewCountryRecord( b ) with { Retired = Base } );
+			await s.InsertCountryAsync( NewCountryRecord( a ) );
 		} );
 
 		string[] current = ( await ReadAsync( s => s.GetCountriesAsync( false ) ) ).Select( c => c.Definition.Code ).ToArray();
@@ -200,8 +200,8 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task UpdateAndRetireCountry()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code ) ) );
-		CountryDefinition changed = Country( code ).Definition with { Name = "Renamed", PostcodePattern = @"^\d{5}$" };
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code ) ) );
+		CountryDefinition changed = NewCountryRecord( code ).Definition with { Name = "Renamed", PostcodePattern = @"^\d{5}$" };
 		ActionContext<Reference> update = Context( Base.AddDays( 1 ), "bob" );
 		DateTime retired = Base.AddDays( 2 );
 
@@ -213,7 +213,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 			unknown = await s.UpdateCountryAsync( changed with { Code = "ZZ" }, update );
 			unknownRetire = await s.SetCountryRetiredAsync( "ZZ", retired, update );
 		} );
-		CountryInfo? read = await ReadAsync( s => s.GetCountryAsync( code ) );
+		Country? read = await ReadAsync( s => s.GetCountryAsync( code ) );
 
 		Assert.True( updated );
 		Assert.True( retiredOk );
@@ -232,9 +232,9 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		SubdivisionInfo? nsw = await ReadAsync( s => s.GetSubdivisionAsync( code, "NSW" ) );
-		SubdivisionInfo[] current = ( await ReadAsync( s => s.GetSubdivisionsAsync( code, false ) ) ).ToArray();
-		SubdivisionInfo[] all = ( await ReadAsync( s => s.GetSubdivisionsAsync( code, true ) ) ).ToArray();
+		Subdivision? nsw = await ReadAsync( s => s.GetSubdivisionAsync( code, "NSW" ) );
+		Subdivision[] current = ( await ReadAsync( s => s.GetSubdivisionsAsync( code, false ) ) ).ToArray();
+		Subdivision[] all = ( await ReadAsync( s => s.GetSubdivisionsAsync( code, true ) ) ).ToArray();
 
 		Assert.Equal( "New South Wales", nsw!.Definition.Name );
 		Assert.Equal( SubdivisionTypes.State, nsw.Definition.Type );
@@ -253,8 +253,8 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 			unknownUpdate = await s.UpdateSubdivisionAsync( nsw.Definition with { Code = "XXX" }, update );
 			unknownRetire = await s.SetSubdivisionRetiredAsync( code, "XXX", null, update );
 		} );
-		SubdivisionInfo? after = await ReadAsync( s => s.GetSubdivisionAsync( code, "NSW" ) );
-		SubdivisionInfo? act = await ReadAsync( s => s.GetSubdivisionAsync( code, "ACT" ) );
+		Subdivision? after = await ReadAsync( s => s.GetSubdivisionAsync( code, "NSW" ) );
+		Subdivision? act = await ReadAsync( s => s.GetSubdivisionAsync( code, "ACT" ) );
 
 		Assert.True( updated );
 		Assert.True( retired );
@@ -271,14 +271,14 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task LocalityRoundTripsEveryField()
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
-		LocalityInfo locality = Locality( code, "NSW", "2650", "Wagga Wagga", registered: Base.AddTicks( 4560 ) ) with
+		Locality locality = NewLocalityRecord( code, "NSW", "2650", "Wagga Wagga", registered: Base.AddTicks( 4560 ) ) with
 		{
 			Retired = Base.AddDays( 1 ).AddTicks( 80 ),
 			LastUpdate = Context( Base.AddDays( 2 ).AddTicks( 120 ), "bob" )
 		};
 
 		await InsertAsync( locality );
-		LocalityInfo? read = await ReadAsync( s => s.GetLocalityAsync( KeyOf( locality ) ) );
+		Locality? read = await ReadAsync( s => s.GetLocalityAsync( KeyOf( locality ) ) );
 
 		Assert.NotNull( read );
 		Assert.Equal( locality.Definition, read.Definition );
@@ -292,12 +292,12 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task LocalityWithoutSubdivisionOrPostcodeRoundTripsNulls()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code, subdivisions: false ) ) );
-		LocalityInfo locality = Locality( code, null, null, "Nauru" );
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code, subdivisions: false ) ) );
+		Locality locality = NewLocalityRecord( code, null, null, "Nauru" );
 
 		await WriteAsync( s => s.InsertLocalityAsync( locality, null, "NAURU" ) );
-		LocalityInfo? read = await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, null, null, "NAURU" ) ) );
-		LocalityInfo[] listed = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, false ) ) ).ToArray();
+		Locality? read = await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, null, null, "NAURU" ) ) );
+		Locality[] listed = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, false ) ) ).ToArray();
 
 		Assert.NotNull( read );
 		Assert.Null( read.Definition.Subdivision );
@@ -312,8 +312,8 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		LocalityInfo[] shared = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, "2620", null, false ) ) ).ToArray();
-		LocalityInfo[] springs = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "QLD", null, "SPRING CREEK", false ) ) ).ToArray();
+		Locality[] shared = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, "2620", null, false ) ) ).ToArray();
+		Locality[] springs = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "QLD", null, "SPRING CREEK", false ) ) ).ToArray();
 
 		Assert.Equal( new[] { "ACT", "NSW" }, shared.Select( l => l.Definition.Subdivision ) );
 		Assert.Equal( new[] { "4000", "4370" }, springs.Select( l => l.Definition.Postcode ) );
@@ -324,11 +324,11 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		LocalityInfo[] current = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, false ) ) ).ToArray();
-		LocalityInfo[] all = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, true ) ) ).ToArray();
-		LocalityInfo[] act = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "ACT", null, null, false ) ) ).ToArray();
-		LocalityInfo[] byName = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, "SYDNEY", false ) ) ).ToArray();
-		LocalityInfo[] other = ( await ReadAsync( s => s.GetLocalitiesAsync( NewCountry(), null, null, null, true ) ) ).ToArray();
+		Locality[] current = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, false ) ) ).ToArray();
+		Locality[] all = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, true ) ) ).ToArray();
+		Locality[] act = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "ACT", null, null, false ) ) ).ToArray();
+		Locality[] byName = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, "SYDNEY", false ) ) ).ToArray();
+		Locality[] other = ( await ReadAsync( s => s.GetLocalitiesAsync( NewCountry(), null, null, null, true ) ) ).ToArray();
 
 		Assert.Equal( 6, current.Length );
 		Assert.Equal( 7, all.Length );
@@ -348,11 +348,11 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		LocalityInfo[] sy = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "SY", null, 10 ) ) ).ToArray();
-		LocalityInfo[] s = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 10 ) ) ).ToArray();
-		LocalityInfo[] limited = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 2 ) ) ).ToArray();
-		LocalityInfo[] qld = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", "QLD", 10 ) ) ).ToArray();
-		LocalityInfo[] none = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "ZZ", null, 10 ) ) ).ToArray();
+		Locality[] sy = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "SY", null, 10 ) ) ).ToArray();
+		Locality[] s = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 10 ) ) ).ToArray();
+		Locality[] limited = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 2 ) ) ).ToArray();
+		Locality[] qld = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", "QLD", 10 ) ) ).ToArray();
+		Locality[] none = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "ZZ", null, 10 ) ) ).ToArray();
 
 		Assert.Equal( "Sydney", Assert.Single( sy ).Definition.Name );
 		Assert.Equal( new[] { "Spring Creek", "Spring Creek", "Sydney" }, s.Select( l => l.Definition.Name ) );
@@ -367,14 +367,14 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task SearchTreatsWildcardsLiterally()
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
-		await InsertAsync( Locality( code, "NSW", "2002", "50% Off_Town" ) );
-		await InsertAsync( Locality( code, "NSW", "2003", "50X Offxtown" ) );
-		await InsertAsync( Locality( code, "NSW", "2004", @"A\B" ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2002", "50% Off_Town" ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2003", "50X Offxtown" ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2004", @"A\B" ) );
 
-		LocalityInfo[] percent = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50%", null, 10 ) ) ).ToArray();
-		LocalityInfo[] underscore = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50% OFF_", null, 10 ) ) ).ToArray();
-		LocalityInfo[] wild = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "%", null, 10 ) ) ).ToArray();
-		LocalityInfo[] slash = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, @"A\", null, 10 ) ) ).ToArray();
+		Locality[] percent = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50%", null, 10 ) ) ).ToArray();
+		Locality[] underscore = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50% OFF_", null, 10 ) ) ).ToArray();
+		Locality[] wild = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "%", null, 10 ) ) ).ToArray();
+		Locality[] slash = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, @"A\", null, 10 ) ) ).ToArray();
 
 		Assert.Equal( "50% Off_Town", Assert.Single( percent ).Definition.Name );
 		Assert.Equal( "50% Off_Town", Assert.Single( underscore ).Definition.Name );
@@ -387,15 +387,15 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		await Assert.ThrowsAsync<SqliteException>( () => InsertAsync( Locality( code, "NSW", "2000", "SYDNEY" ) ) );
-		await Assert.ThrowsAsync<SqliteException>( () => WriteAsync( s => s.InsertCountryAsync( Country( code ) ) ) );
-		await Assert.ThrowsAsync<SqliteException>( () => WriteAsync( s => s.InsertSubdivisionAsync( Subdivision( code, "NSW", "Again" ) ) ) );
+		await Assert.ThrowsAsync<SqliteException>( () => InsertAsync( NewLocalityRecord( code, "NSW", "2000", "SYDNEY" ) ) );
+		await Assert.ThrowsAsync<SqliteException>( () => WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code ) ) ) );
+		await Assert.ThrowsAsync<SqliteException>( () => WriteAsync( s => s.InsertSubdivisionAsync( NewSubdivisionRecord( code, "NSW", "Again" ) ) ) );
 	}
 
 	[Fact]
 	public async Task LocalityUnderUnknownCountryIsRejected()
 	{
-		await Assert.ThrowsAsync<SqliteException>( () => InsertAsync( Locality( "QQ", null, null, "Nowhere" ) ) );
+		await Assert.ThrowsAsync<SqliteException>( () => InsertAsync( NewLocalityRecord( "QQ", null, null, "Nowhere" ) ) );
 	}
 
 	[Fact]
@@ -414,9 +414,9 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 			unknownRetire = await s.SetLocalityRetiredAsync( unknown, null, retire );
 			unknownDelete = await s.DeleteLocalityAsync( unknown );
 		} );
-		LocalityInfo? afterRetire = await ReadAsync( s => s.GetLocalityAsync( key ) );
+		Locality? afterRetire = await ReadAsync( s => s.GetLocalityAsync( key ) );
 		await WriteAsync( s => s.SetLocalityRetiredAsync( key, null, reinstate ) );
-		LocalityInfo? afterReinstate = await ReadAsync( s => s.GetLocalityAsync( key ) );
+		Locality? afterReinstate = await ReadAsync( s => s.GetLocalityAsync( key ) );
 		bool deleted = false;
 		await WriteAsync( async s => deleted = await s.DeleteLocalityAsync( key ) );
 
@@ -438,7 +438,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task AdvanceVersionIsStrictlyIncreasing()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code, version: Base ) ) );
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code, version: Base ) ) );
 		List<DateTime> versions = new();
 
 		foreach( DateTime now in new[] { Base.AddSeconds( 10 ), Base.AddSeconds( 10 ), Base.AddSeconds( 3 ), Base.AddSeconds( 3 ) } )
@@ -449,7 +449,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		Assert.Equal( versions[1].AddTicks( 1 ), versions[2] );
 		Assert.Equal( versions[2].AddTicks( 1 ), versions[3] );
 		Assert.All( versions, v => Assert.Equal( DateTimeKind.Utc, v.Kind ) );
-		CountryInfo? read = await ReadAsync( s => s.GetCountryAsync( code ) );
+		Country? read = await ReadAsync( s => s.GetCountryAsync( code ) );
 		Assert.Equal( versions[3], read!.CurrentVersion );
 		Assert.Equal( DateTimeKind.Utc, read.CurrentVersion.Kind );
 	}
@@ -458,7 +458,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task VersionColumnsAreStoredAsTickExactDigitText()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code, version: Base ) ) );
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code, version: Base ) ) );
 		// Odd ticks, and fractions whose default text would differ in length: .0000001, .1, .1000001, .12.
 		DateTime[] nows = { Base.AddTicks( 1 ), Base.AddTicks( 1_000_000 ), Base.AddTicks( 1_000_001 ), Base.AddTicks( 1_200_000 ), Base.AddSeconds( 1 ) };
 
@@ -476,11 +476,11 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		Assert.Equal( "202603010830160000000", stored );
 
 		// stamped is digit text too, so the stale-row comparison is exact to the tick.
-		await InsertAsync( Locality( code, "NSW", "2000", "Early", registered: Base ) );
-		await InsertAsync( Locality( code, "NSW", "2000", "Tick1", registered: Base.AddTicks( 1 ) ) );
-		await InsertAsync( Locality( code, "NSW", "2000", "Frac1", registered: Base.AddTicks( 1_000_000 ) ) );
-		await InsertAsync( Locality( code, "NSW", "2000", "Frac2", registered: Base.AddTicks( 1_000_001 ) ) );
-		await InsertAsync( Locality( code, "NSW", "2000", "Later", registered: Base.AddSeconds( 1 ) ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Early", registered: Base ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Tick1", registered: Base.AddTicks( 1 ) ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Frac1", registered: Base.AddTicks( 1_000_000 ) ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Frac2", registered: Base.AddTicks( 1_000_001 ) ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Later", registered: Base.AddSeconds( 1 ) ) );
 		string[] stamps = ( await connection.QueryAsync<string>(
 								"select stamped from locality where country = @code order by stamped;", new { code } ) )
 							.ToArray();
@@ -508,7 +508,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task ConcurrentTransactionsGetDistinctVersions()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code, version: Base ) ) );
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code, version: Base ) ) );
 
 		// Same utcNow for everyone, so only the serialization gives distinct values.
 		Task<DateTime?>[] tasks = Enumerable.Range( 0, 6 ).Select( _ =>
@@ -531,12 +531,12 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task FailedUnitOfWorkRollsBackEveryWrite()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code, version: Base ) ) );
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code, version: Base ) ) );
 
 		await Assert.ThrowsAsync<InvalidOperationException>( () => WriteAsync( async s =>
 		{
 			await s.AdvanceVersionAsync( code, Base.AddDays( 1 ) );
-			await s.InsertSubdivisionAsync( Subdivision( code, "NSW", "New South Wales" ) );
+			await s.InsertSubdivisionAsync( NewSubdivisionRecord( code, "NSW", "New South Wales" ) );
 			throw new InvalidOperationException( "boom" );
 		} ) );
 
@@ -550,23 +550,23 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		( string code, _ ) = await SeedAustraliaAsync();
 		DateTime importAt = Base.AddDays(10).AddTicks( 70 );
 		ActionContext<Reference> import = Context( importAt, "importer" );
-		await InsertAsync( Locality( code, "NSW", "2650", "Wagga Wagga", retired: Base.AddDays( 1 ) ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2650", "Wagga Wagga", retired: Base.AddDays( 1 ) ) );
 		LocalityUpsertOutcome added = default, reinstated = default, unchanged = default;
 
 		await WriteAsync( async s =>
 		{
-			added = await s.UpsertImportedLocalityAsync( Locality( code, "NSW", "2800", "Orange" ), "2800", "ORANGE", import );
-			reinstated = await s.UpsertImportedLocalityAsync( Locality( code, "NSW", "2650", "Wagga Wagga" ), "2650", "WAGGA WAGGA", import );
-			unchanged = await s.UpsertImportedLocalityAsync( Locality( code, "NSW", "2000", "Sydney" ), "2000", "SYDNEY", import );
+			added = await s.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2800", "Orange" ), "2800", "ORANGE", import );
+			reinstated = await s.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2650", "Wagga Wagga" ), "2650", "WAGGA WAGGA", import );
+			unchanged = await s.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2000", "Sydney" ), "2000", "SYDNEY", import );
 		} );
 
 		Assert.Equal( LocalityUpsertOutcome.Added, added );
 		Assert.Equal( LocalityUpsertOutcome.Reinstated, reinstated );
 		Assert.Equal( LocalityUpsertOutcome.Unchanged, unchanged );
 
-		LocalityInfo orange = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2800", "ORANGE" ) ) ) )!;
-		LocalityInfo wagga = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2650", "WAGGA WAGGA" ) ) ) )!;
-		LocalityInfo sydney = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2000", "SYDNEY" ) ) ) )!;
+		Locality orange = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2800", "ORANGE" ) ) ) )!;
+		Locality wagga = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2650", "WAGGA WAGGA" ) ) ) )!;
+		Locality sydney = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2000", "SYDNEY" ) ) ) )!;
 		AssertContext( import, orange.Registration );
 		Assert.Null( orange.LastUpdate );
 		Assert.Null( wagga.Retired );
@@ -588,8 +588,8 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		// Sydney is confirmed (old Registration, new LastUpdate), Orange is new, the rest untouched.
 		await WriteAsync( async s =>
 		{
-			await s.UpsertImportedLocalityAsync( Locality( code, "NSW", "2000", "Sydney" ), "2000", "SYDNEY", import );
-			await s.UpsertImportedLocalityAsync( Locality( code, "NSW", "2800", "Orange" ), "2800", "ORANGE", import );
+			await s.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2000", "Sydney" ), "2000", "SYDNEY", import );
+			await s.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2800", "Orange" ), "2800", "ORANGE", import );
 			deleted = await s.DeleteLocalitiesStampedBeforeAsync( code, importAt );
 		} );
 
@@ -606,7 +606,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	public async Task ImportRunsRoundTripMostRecentFirst()
 	{
 		string code = NewCountry();
-		await WriteAsync( s => s.InsertCountryAsync( Country( code ) ) );
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code ) ) );
 		ImportRun Run( string id, DateTime at ) =>
 			new()
 			{

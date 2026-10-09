@@ -3,7 +3,7 @@ namespace Pug.Sal.Abstractions
 	// Operations checked against SecurityObjectTypes.Country.
 	public static class SecurityOperations
 	{
-		// Every ILocalityDirectory operation.
+		// Every ILocalityDirectory operation, and the reads of ILocalityAdministration.
 		public static string View => "VIEW";
 
 		public static string Create => "CREATE";

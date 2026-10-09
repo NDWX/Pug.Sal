@@ -202,6 +202,8 @@ packages.
 - **Definition + Info composition**, following Scheduling's `ScheduleInfo`:
   - `XDefinition` is what a maintainer authors. `XInfo` adds what Sal maintains: `Retired`,
     `Registration`, `LastUpdate`, plus `CurrentVersion` on countries.
+  - **Revised by D16:** `XInfo` no longer carries `Registration` / `LastUpdate`. The full record
+    `X` (`Country`, `Subdivision`, `Locality`) does.
   - Writes take definitions and return the written record. Country-scoped writes wrap it in
     `Versioned<T>` with the version the write produced.
 - **No `PostcodeInfo`.** The plan listed one. Instead, a postcode is a plain string, unique within
@@ -286,7 +288,9 @@ item by item.
 - **The version stays a strictly increasing UTC timestamp** (D6). The review suggested a counter,
   but the user asked for a timestamp, and the rule above relies on it being one.
 
-## D14 — One class implements both service interfaces (user directive, 2026-10-09)
+## D14 — One class implements both service interfaces (user directive, 2026-10-09; superseded by D16)
+
+Superseded the same day by D16. Kept for the record.
 
 - `ILocalityDirectory` and `ILocalityAdministration` stay separate interfaces, so a consumer can
   depend on reads only. Both are implemented by **one** class, not one class each:
@@ -299,7 +303,7 @@ item by item.
 ## D15 — Store design (phase 2, assistant's choices)
 
 - **The store holds no policy.** `IDataSession` does storage primitives only. These stay with the
-  caller (`LocalityService`): authorization, normalization, validation, version policy, key
+  caller (`LocalityDirectory` / `LocalityAdministration`, D16): authorization, normalization, validation, version policy, key
   de-duplication within a dataset, and choosing timestamps.
 - **The caller supplies normalized keys.** The store never normalizes. A locality is stored with
   its display `postcode` and `name`, plus `postcodeKey` and `nameKey` from `INameNormalizer`.
@@ -351,6 +355,42 @@ item by item.
 - **Duplicate keys and missing parent countries** surface as `SqliteException`, unwrapped. The
   service maps them in phase 4.
 
+## D16 — Separate directory and administration; audit-free reader records (user directive, 2026-10-09)
+
+Reverses D14. The directory should not hand out the audit contexts, so administration needs its own
+reads, and the two interfaces get their own implementations.
+
+- **Three tiers of record.**
+  - `XDefinition`: what a maintainer authors.
+  - `XInfo` (`CountryInfo`, `SubdivisionInfo`, `LocalityInfo`): what `ILocalityDirectory`
+    publishes. It holds the definition, `Retired`, and `CurrentVersion` on countries. It has **no**
+    `Registration` / `LastUpdate`.
+  - `X` (`Country`, `Subdivision`, `Locality`): the full record with the audit contexts, returned by
+    `ILocalityAdministration`.
+  - The full records are **standalone**: fields are repeated, with no inheritance from `XInfo`
+    (user choice). A directory result can then never be a full record at runtime, and polymorphic
+    serialization cannot leak the audit fields.
+- **The store returns the full records.** `IDataSession` reads and writes `Country` /
+  `Subdivision` / `Locality`. The directory projects them with the `ToInfo()` extension methods in
+  `Pug.Sal.Models/InfoProjections.cs` (user choice).
+- **`ILocalityAdministration` has its own reads**, mirroring the directory's except validation:
+  - `GetCountriesAsync`, `GetCountryVersionsAsync`, `GetCountryAsync`;
+  - `GetSubdivisionsAsync`, `GetSubdivisionAsync`;
+  - `GetLocalitiesAsync`, `GetLocalityAsync`, `SearchLocalitiesAsync`.
+
+  They require **VIEW**, like the directory's (user choice). Hiding the audit fields is about API
+  shape, not secrecy. Its writes return the full records.
+- **Implementations:**
+  - `LocalityDirectory : ILocalityDirectory` and `LocalityAdministration : ILocalityAdministration`
+    in `Pug.Sal`. Import mechanics sit in an internal `ImportCoordinator` used by
+    `LocalityAdministration`. Shared read logic (key normalization, unknown-country checks) lives
+    in internal helpers, not in one class implementing both interfaces.
+  - `LocalityDirectoryClient` and `LocalityAdministrationClient` in `Pug.Sal.Client`.
+  - DI registers each class under its own interface.
+- **The model generator is checked in** as `tools/genmodels.py`. Model fields and comments are
+  edited there, and the records are then regenerated with
+  `python3 tools/genmodels.py src/Pug.Sal.Models`. `InfoProjections.cs` is hand-written.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
@@ -359,11 +399,16 @@ item by item.
   fixture data.
 - Postgres is checked with Testcontainers via `sg docker -c "…"`.
 
-## Phase status (pause for user review after every phase)
+## Phase status
+
+Since 2026-10-09 (user directive), each phase is committed once it passes the gate, and work then
+continues to the next phase without pausing. The repository was initialized then, and phases 0–2
+make up the first commit.
 
 - **0 Decisions:** this log, `CLAUDE.md`, `global.json`, `Directory.Build.props`. DONE.
 - **1 Models + Abstractions:** contracts only, build-gated. DONE, approved 2026-10-09.
-- **2 Data (SQLite).** DONE (Data.Abstractions, Data.SQLite, 28 store tests), awaiting review.
+- **2 Data (SQLite).** DONE (Data.Abstractions, Data.SQLite, 28 store tests).
+- **D16 amendment** (full records, administration reads, split implementations). DONE.
 - **3 Core read facade + normalizer.** Not started.
 - **4 Admin + import + events.** Not started.
 - **5 Postgres.** Not started.

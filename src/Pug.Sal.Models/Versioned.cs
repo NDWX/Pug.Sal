@@ -20,7 +20,7 @@ namespace Pug.Sal.Models
 #endif
 		}
 
-		// UTC; see CountryInfo.CurrentVersion.
+		// UTC; see Country.CurrentVersion.
 		[Required, DataMember( IsRequired = true )]
 		public DateTime DatasetVersion
 		{

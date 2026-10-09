@@ -4,7 +4,8 @@ using Pug.Sal.Models;
 
 namespace Pug.Sal.Data.Abstractions
 {
-	// Storage contract consumed only by Pug.Sal's LocalityService (and its ImportCoordinator).
+	// Storage contract consumed only by Pug.Sal's LocalityDirectory and LocalityAdministration (and
+	// the latter's ImportCoordinator).
 	// Methods are storage primitives: authorization, normalization, validation, version policy,
 	// de-duplicating a dataset's keys and choosing timestamps all live with the caller, which
 	// composes primitives into atomic units inside one transaction (DECISIONS D15).
@@ -14,18 +15,21 @@ namespace Pug.Sal.Data.Abstractions
 	// addressing a record that does not exist do nothing and return false; callers read first when
 	// they must tell the caller which record was unknown.
 	//
+	// Records are the full Country, Subdivision and Locality, audit contexts included; the
+	// directory projects them to the audit-free *Info records with ToInfo() (D16).
+	//
 	// All DateTimes are UTC and are returned with DateTimeKind.Utc.
 	public interface IDataSession : IApplicationDataSession
 	{
 		// == Countries ==
 
 		// Inserts the country with its CurrentVersion as given.
-		Task InsertCountryAsync( CountryInfo country );
+		Task InsertCountryAsync( Country country );
 
-		Task<CountryInfo?> GetCountryAsync( string country );
+		Task<Country?> GetCountryAsync( string country );
 
 		// Ordered by code.
-		Task<IEnumerable<CountryInfo>> GetCountriesAsync( bool includeRetired );
+		Task<IEnumerable<Country>> GetCountriesAsync( bool includeRetired );
 
 		// Every country, retired included, ordered by code.
 		Task<IEnumerable<CountryVersion>> GetCountryVersionsAsync();
@@ -44,12 +48,12 @@ namespace Pug.Sal.Data.Abstractions
 
 		// == Subdivisions ==
 
-		Task InsertSubdivisionAsync( SubdivisionInfo subdivision );
+		Task InsertSubdivisionAsync( Subdivision subdivision );
 
-		Task<SubdivisionInfo?> GetSubdivisionAsync( string country, string subdivision );
+		Task<Subdivision?> GetSubdivisionAsync( string country, string subdivision );
 
 		// Ordered by code.
-		Task<IEnumerable<SubdivisionInfo>> GetSubdivisionsAsync( string country, bool includeRetired );
+		Task<IEnumerable<Subdivision>> GetSubdivisionsAsync( string country, bool includeRetired );
 
 		// Replaces the subdivision's Name and Type and stamps LastUpdate.
 		Task<bool> UpdateSubdivisionAsync( SubdivisionDefinition definition, ActionContext<Reference> lastUpdate );
@@ -60,19 +64,19 @@ namespace Pug.Sal.Data.Abstractions
 
 		// Inserts the locality under the given normalized keys (which must be those of
 		// locality.Definition). Its stamped time is Registration's timestamp.
-		Task InsertLocalityAsync( LocalityInfo locality, string? postcodeKey, string nameKey );
+		Task InsertLocalityAsync( Locality locality, string? postcodeKey, string nameKey );
 
-		Task<LocalityInfo?> GetLocalityAsync( LocalityKey key );
+		Task<Locality?> GetLocalityAsync( LocalityKey key );
 
 		// Localities of the country, each filter applied only when given (subdivision code,
 		// normalized postcode, normalized name; exact matches). Ordered by subdivision, name key,
 		// postcode key.
-		Task<IEnumerable<LocalityInfo>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, bool includeRetired );
+		Task<IEnumerable<Locality>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, bool includeRetired );
 
 		// Current localities of the country whose name key starts with namePrefixKey (taken
 		// literally: LIKE wildcards in it match only themselves), optionally within one
 		// subdivision. Ordered by name key, subdivision, postcode key; at most limit rows.
-		Task<IEnumerable<LocalityInfo>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, int limit );
+		Task<IEnumerable<Locality>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, int limit );
 
 		// Sets or clears the locality's Retired timestamp, stamps LastUpdate, and moves its stamped
 		// time to lastUpdate's timestamp.
@@ -86,7 +90,7 @@ namespace Pug.Sal.Data.Abstractions
 		// LastUpdate null, current), otherwise clears Retired and stamps LastUpdate = context. Either
 		// way the row's stamped time becomes context's timestamp. The caller passes each key once
 		// per import.
-		Task<LocalityUpsertOutcome> UpsertImportedLocalityAsync( LocalityInfo locality, string? postcodeKey, string nameKey, ActionContext<Reference> context );
+		Task<LocalityUpsertOutcome> UpsertImportedLocalityAsync( Locality locality, string? postcodeKey, string nameKey, ActionContext<Reference> context );
 
 		// Deletes the country's localities whose stamped time (the latest of Registration and
 		// LastUpdate) is earlier than timestamp, and returns how many were deleted.

@@ -4,9 +4,12 @@ using Pug.Sal.Models;
 
 namespace Pug.Sal.Abstractions
 {
-	// Read facade: listing, lookup, search and validation. It is the single wire contract
-	// implemented by the in-process facade and by Pug.Sal.Client, so keep it the source of truth
-	// for Sal's read capabilities.
+	// Read facade: listing, lookup, search and validation. It is the wire contract implemented
+	// in-process by LocalityDirectory and over HTTP by Pug.Sal.Client's LocalityDirectoryClient
+	// (DECISIONS D16), so keep it the source of truth for Sal's read capabilities.
+	//
+	// Its records (CountryInfo, SubdivisionInfo, LocalityInfo) never carry the audit contexts
+	// (Registration, LastUpdate); ILocalityAdministration's reads return the full records.
 	//
 	// Authorization: every operation requires a principal holding SecurityOperations.View on
 	// ResourceQualifiers.AllCountries; NotAuthorized otherwise, and a call without a principal is
