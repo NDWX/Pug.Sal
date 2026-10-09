@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Title>Pug.Sal.Importers.Csv</Title>
+		<Description>Generic column-mapped CSV dataset importer for Pug.Sal.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Import CSV</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Abstractions/Pug.Sal.Abstractions.csproj" />
+	</ItemGroup>
+
+</Project>

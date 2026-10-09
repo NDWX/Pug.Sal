@@ -1,6 +1,7 @@
 using System.Data;
 using System.Transactions;
 using Dapper;
+using Microsoft.Data.Sqlite;
 using Pug.Application.Data;
 using Pug.Effable;
 using Pug.Sal.Data.Abstractions;
@@ -277,9 +278,26 @@ namespace Pug.Sal.Data.SQLite
 
 		// == Countries ==
 
+		// SQLITE_CONSTRAINT_PRIMARYKEY and SQLITE_CONSTRAINT_UNIQUE; a foreign key violation
+		// (SQLITE_CONSTRAINT_FOREIGNKEY) is left as it is.
+		private static bool IsDuplicateKey( SqliteException exception ) =>
+			exception.SqliteExtendedErrorCode is 1555 or 2067;
+
+		private static async Task InsertAsync( Func<Task> insert, string description )
+		{
+			try
+			{
+				await insert().ConfigureAwait( false );
+			}
+			catch( SqliteException exception ) when( IsDuplicateKey( exception ) )
+			{
+				throw new DuplicateKeyException( $"{description} already exists.", exception );
+			}
+		}
+
 		public Task InsertCountryAsync( Country country )
 		{
-			return Connection.ExecuteAsync(
+			return InsertAsync( () => Connection.ExecuteAsync(
 					$@"insert into country({CountryColumns})
 						values(@code, @alpha3, @name, @postcodePattern, @postcodeRequired, @hasSubdivisions,
 							@currentVersion, @retired, @registration, @lastUpdate);",
@@ -296,7 +314,7 @@ namespace Pug.Sal.Data.SQLite
 						registration = country.Registration,
 						lastUpdate = country.LastUpdate
 					}
-				);
+				), $"Country '{country.Definition.Code}'" );
 		}
 
 		public async Task<Country?> GetCountryAsync( string country )
@@ -395,7 +413,7 @@ namespace Pug.Sal.Data.SQLite
 
 		public Task InsertSubdivisionAsync( Subdivision subdivision )
 		{
-			return Connection.ExecuteAsync(
+			return InsertAsync( () => Connection.ExecuteAsync(
 					$@"insert into subdivision({SubdivisionColumns})
 						values(@country, @code, @name, @type, @retired, @registration, @lastUpdate);",
 					new
@@ -408,7 +426,7 @@ namespace Pug.Sal.Data.SQLite
 						registration = subdivision.Registration,
 						lastUpdate = subdivision.LastUpdate
 					}
-				);
+				), $"Subdivision '{subdivision.Definition.Country}/{subdivision.Definition.Code}'" );
 		}
 
 		public async Task<Subdivision?> GetSubdivisionAsync( string country, string subdivision )
@@ -466,12 +484,12 @@ namespace Pug.Sal.Data.SQLite
 
 		public Task InsertLocalityAsync( Locality locality, string? postcodeKey, string nameKey )
 		{
-			return Connection.ExecuteAsync(
+			return InsertAsync( () => Connection.ExecuteAsync(
 					$@"insert into locality({LocalityColumns}, postcodeKey, nameKey, stamped)
 						values(@country, @subdivision, @postcode, @name, @retired, @registration, @lastUpdate,
 							@postcodeKey, @nameKey, @stamped);",
 					InsertParameters( locality, postcodeKey, nameKey )
-				);
+				), $"Locality '{locality.Definition.Country}/{locality.Definition.Subdivision}/{postcodeKey}/{nameKey}'" );
 		}
 
 		private static object InsertParameters( Locality locality, string? postcodeKey, string nameKey ) =>
@@ -587,6 +605,14 @@ namespace Pug.Sal.Data.SQLite
 								).ConfigureAwait( false );
 
 			return affected > 0;
+		}
+
+		public Task<bool> HasLocalitiesAsync( string country )
+		{
+			return Connection.ExecuteScalarAsync<bool>(
+					"select exists( select 1 from locality where country = @country );",
+					new { country }
+				);
 		}
 
 		// == Imports ==

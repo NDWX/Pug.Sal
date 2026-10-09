@@ -387,9 +387,26 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		await Assert.ThrowsAsync<SqliteException>( () => InsertAsync( NewLocalityRecord( code, "NSW", "2000", "SYDNEY" ) ) );
-		await Assert.ThrowsAsync<SqliteException>( () => WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code ) ) ) );
-		await Assert.ThrowsAsync<SqliteException>( () => WriteAsync( s => s.InsertSubdivisionAsync( NewSubdivisionRecord( code, "NSW", "Again" ) ) ) );
+		await Assert.ThrowsAsync<DuplicateKeyException>( () => InsertAsync( NewLocalityRecord( code, "NSW", "2000", "SYDNEY" ) ) );
+		await Assert.ThrowsAsync<DuplicateKeyException>( () => WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code ) ) ) );
+		await Assert.ThrowsAsync<DuplicateKeyException>( () => WriteAsync( s => s.InsertSubdivisionAsync( NewSubdivisionRecord( code, "NSW", "Again" ) ) ) );
+	}
+
+	[Fact]
+	public async Task HasLocalitiesCountsRetiredOnes()
+	{
+		string empty = NewCountry();
+		string retiredOnly = NewCountry();
+
+		await WriteAsync( async s =>
+		{
+			await s.InsertCountryAsync( NewCountryRecord( empty, subdivisions: false ) );
+			await s.InsertCountryAsync( NewCountryRecord( retiredOnly, subdivisions: false ) );
+		} );
+		await InsertAsync( NewLocalityRecord( retiredOnly, null, null, "Gone", retired: Base ) );
+
+		Assert.False( await ReadAsync( s => s.HasLocalitiesAsync( empty ) ) );
+		Assert.True( await ReadAsync( s => s.HasLocalitiesAsync( retiredOnly ) ) );
 	}
 
 	[Fact]

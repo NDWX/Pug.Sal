@@ -35,6 +35,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../../src/Pug.Sal/Pug.Sal.csproj" />
+    <ProjectReference Include="../../src/Pug.Sal.Importers.Csv/Pug.Sal.Importers.Csv.csproj" />
     <ProjectReference Include="../../src/Pug.Sal.Data.SQLite/Pug.Sal.Data.SQLite.csproj" />
   </ItemGroup>
 

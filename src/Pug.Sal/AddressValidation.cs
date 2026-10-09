@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using Pug.Sal.Abstractions;
 using Pug.Sal.Models;
 
@@ -32,8 +31,6 @@ namespace Pug.Sal
 	{
 		public const int MaximumSuggestions = 10;
 
-		private static readonly TimeSpan PatternTimeout = TimeSpan.FromSeconds( 1 );
-
 		public static ValidationResult Validate( AddressCandidate candidate, AddressEvidence evidence, INameNormalizer normalizer )
 		{
 			CountryDefinition country = evidence.Country.Definition;
@@ -62,7 +59,7 @@ namespace Pug.Sal
 
 			if( postcodeKey is null )
 				postcodeResult = Outcome( country.PostcodeRequired ? ValidationOutcomes.Missing : ValidationOutcomes.NotApplicable );
-			else if( !IsWellFormed( postcodeKey, country.PostcodePattern ) )
+			else if( !PostcodeRules.IsWellFormed( postcodeKey, country.PostcodePattern ) )
 				postcodeResult = Outcome( ValidationOutcomes.Malformed );
 			else
 				postcodeResult = Matched( Best( evidence.ByPostcode ), locality => locality.Definition.Postcode );
@@ -179,10 +176,6 @@ namespace Pug.Sal
 
 			return null;
 		}
-
-		private static bool IsWellFormed( string postcodeKey, string? pattern ) =>
-			pattern is null ||
-			Regex.IsMatch( postcodeKey, $"^(?:{pattern})$", RegexOptions.CultureInvariant, PatternTimeout );
 
 		private static bool IsUnder( Locality locality, Subdivision? subdivision ) =>
 			subdivision is null || locality.Definition.Subdivision == subdivision.Definition.Code;

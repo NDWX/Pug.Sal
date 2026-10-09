@@ -24,7 +24,8 @@ namespace Pug.Sal.Abstractions
 	// written record with that version, and is then published to the host's
 	// ILocalityChangePublisher, as a LocalityChange or, for an import, as its ImportRun. Countries
 	// and subdivisions are only ever retired, which is reversible; localities may also be deleted,
-	// by an administrator or by an import.
+	// by an administrator or by an import. Retiring a retired record, or reinstating a current one,
+	// changes nothing: it returns the record as it is, bumps nothing and publishes nothing.
 	//
 	// Localities are addressed by their key: country, subdivision code (null in countries without
 	// subdivisions), postcode (null when it has none) and name, postcode and name matched on their
@@ -135,8 +136,8 @@ namespace Pug.Sal.Abstractions
 		// Always bumps the dataset version once, and publishes the ImportRun (not LocalityChanges)
 		// once.
 		// Throws UnknownCountryException, UnknownDatasetImporterException, and DatasetImportException
-		// when the dataset is unreadable or any row is invalid; a failed import applies nothing, bumps
-		// nothing and publishes nothing.
+		// when the dataset is unreadable, holds no rows (which would delete the whole country), or any
+		// row is invalid; a failed import applies nothing, bumps nothing and publishes nothing.
 		Task<ImportRun> ImportAsync( string country, ImportRequest request, Stream source );
 
 		// Requires IMPORT. The country's import runs, most recent first. Throws

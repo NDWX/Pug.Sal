@@ -18,6 +18,8 @@ namespace Pug.Sal.Data.Abstractions
 	// Records are the full Country, Subdivision and Locality, audit contexts included; the
 	// directory projects them to the audit-free *Info records with ToInfo() (D16).
 	//
+	// Insert* methods throw DuplicateKeyException when the record's key already exists.
+	//
 	// All DateTimes are UTC and are returned with DateTimeKind.Utc.
 	public interface IDataSession : IApplicationDataSession
 	{
@@ -83,6 +85,9 @@ namespace Pug.Sal.Data.Abstractions
 		Task<bool> SetLocalityRetiredAsync( LocalityKey key, DateTime? retired, ActionContext<Reference> lastUpdate );
 
 		Task<bool> DeleteLocalityAsync( LocalityKey key );
+
+		// Whether the country holds any locality, retired ones included.
+		Task<bool> HasLocalitiesAsync( string country );
 
 		// == Imports ==
 

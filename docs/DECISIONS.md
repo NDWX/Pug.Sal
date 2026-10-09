@@ -438,6 +438,58 @@ reads, and the two interfaces get their own implementations.
 
     A retired country gets no suggestions.
 
+## D18 — Administration, imports and the CSV importer (phase 4, assistant's choices)
+
+- **One transaction per write, lock first.** `LocalityAdministration.WriteAsync` runs each write to
+  an existing country in one `ExecuteAsync`:
+  - `AdvanceVersionAsync` first, which takes the lock and the version;
+  - then the write, stamped with an action context at that version.
+
+  Any exception inside it, such as an unknown subdivision or a duplicate, rolls the bump back with
+  the write.
+  - A new country has no row to lock. Its first version is `DatasetVersions.Next( MinValue, now )`.
+- **Duplicates.** Store inserts throw the store-neutral `DuplicateKeyException`
+  (`Pug.Sal.Data.Abstractions`). SQLite maps extended codes 1555 (primary key) and 2067 (unique);
+  a foreign-key violation stays a `SqliteException`. The facade reports it as
+  `DuplicateEntryException`, with the key as `<subdivision>/<postcode>/<name>` for localities.
+- **Retire and reinstate are idempotent.** If the record is already in the requested state, it
+  comes back from a plain read, with no bump and nothing published. The check happens before the
+  write transaction. A race between two such calls costs at most one redundant, harmless write.
+- **Definitions are tidied before storage** (`DefinitionRules`):
+  - Country codes must match `^[A-Z]{2}$` after trimming and upper-casing. Alpha-3 must match
+    `^[A-Z]{3}$`.
+  - Names and codes are trimmed. Blank optional values become null.
+  - A `PostcodePattern` that will not compile is an `ArgumentException`.
+  - Subdivision codes keep their case.
+- **Locality creation:**
+  - Allowed under a retired subdivision, as imports are.
+  - Display values are trimmed.
+  - The postcode is checked by `PostcodeRules`, shared with validation and imports.
+- **`HasLocalitiesAsync`** is the store primitive behind refusing a `HasSubdivisions` change.
+- **Imports:**
+  - The country is checked before the dataset is read. The whole dataset is parsed into memory
+    before the transaction starts, so the lock is not held while the source is read.
+  - Rows are checked before anything is written. `DatasetImportException.Position` is the 1-based
+    row number. A repeated key keeps the first row's display values.
+  - **An empty dataset is refused**, because it would delete every locality of the country.
+  - `ImportRun.Importer` is the requested importer name, trimmed. `Identifier` is a new GUID (`N`
+    format).
+- **Publishing** happens after commit through the host's publisher. A failure is logged as a
+  warning (`ILogger<LocalityAdministration>`, optional) and swallowed.
+  - `NullLocalityChangePublisher` is the default when the host registers none.
+  - `DatasetImporterRegistry` is the default registry. It is case-insensitive and refuses duplicate
+    names.
+- **`Pug.Sal.Importers.Csv` (`CsvDatasetImporter`, conventional name `csv`):**
+  - RFC 4180 with a header record. Columns are found by header name (options `locality`,
+    `postcode`, `subdivision`), and `subdivisionPrefix` maps `NSW` to `AU-NSW`. The `delimiter`
+    option takes a single character or `tab`.
+  - Every record must have as many fields as the header. Values are trimmed and blank lines
+    skipped.
+  - Error positions are 1-based line numbers.
+  - It has no third-party CSV dependency.
+- **SQLite and long imports:** while an import holds the write lock, other writers wait up to the
+  connection's `busy_timeout`. Hosts importing large datasets should set it generously.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
@@ -458,6 +510,7 @@ make up the first commit.
 - **D16 amendment** (full records, administration reads, split implementations). DONE.
 - **3 Core read facade + normalizer.** DONE (`LocalityServiceBase`, `LocalityDirectory`,
   `AddressValidation`, `NameNormalizer`; AU fixture tests; 86 tests in all).
-- **4 Admin + import + events.** Not started.
+- **4 Admin + import + events.** DONE (`LocalityAdministration`, `ImportCoordinator`,
+  `Pug.Sal.Importers.Csv`, duplicate mapping; 135 tests in all).
 - **5 Postgres.** Not started.
 - **6 WebApi + Client + DI.** Not started.
