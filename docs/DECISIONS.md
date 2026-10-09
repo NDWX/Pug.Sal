@@ -528,6 +528,56 @@ reads, and the two interfaces get their own implementations.
   Search assertions take the leading prefix matches and require any similarity matches to come
   after them.
 
+## D20 — HTTP surface, clients and DI (phase 6, assistant's choices)
+
+- **Routes.**
+  - **The directory is under `sal/`:**
+    - `countries`, `countries/versions` and `countries/{country}`;
+    - `…/subdivisions` and `…/subdivisions/{subdivision}`;
+    - `…/localities` (filters as query), `…/localities/search` and `…/locality`;
+    - `POST sal/validate`, a POST only because the candidate travels as a body.
+  - **Administration mirrors the reads under `sal/admin/`**, with these writes added:
+    - `POST countries`, `PUT countries/{c}` and `POST countries/{c}/retire|reinstate`;
+    - the same three shapes under `subdivisions`;
+    - `POST …/localities`, `POST …/locality/retire|reinstate` and `DELETE …/locality`, which
+      returns a `DatasetVersionResult`;
+    - `POST …/imports` and `GET …/imports`.
+  - A single locality is addressed by query (`subdivision`, `postcode`, `name`), because its
+    subdivision and postcode may be absent.
+  - Where a route names the country, subdivision or code, the route wins over the body.
+  - `MapSalEndpoints()` maps both. A read-only host maps `MapSalDirectoryEndpoints()` alone.
+- **Failures** are mapped by `SalResults` and reversed by the client's `ApiFailures`:
+  - 403 for `NotAuthorized`;
+  - 400 with a `BadRequestResultInfo` for `ArgumentException`;
+  - 404 with a `FailureInfo` for an unknown country, subdivision or locality;
+  - 409 with a `FailureInfo` for a duplicate;
+  - 422 with a `FailureInfo` for an unknown importer or an invalid dataset (with `Position`).
+
+  401 stays the transport's `AuthenticationException`.
+- **ETags on every read:**
+  - a country-scoped read is tagged with the ticks of the dataset version it carries;
+  - a cross-country listing is tagged with a SHA-256 over its `code:version` pairs.
+
+  Tags are per URL. `If-None-Match` that matches (or `*`) gets 304. The read still runs, so the
+  saving is bandwidth, not database work.
+- **Imports over HTTP** send the dataset as the raw request body (any media type). `importer` and
+  `source` go in the query, and each `option.<name>=<value>` becomes `Options[name]`. Kestrel's
+  request size limit applies; hosts importing large datasets may need to raise it.
+- **Clients.** `LocalityDirectoryClient` and `LocalityAdministrationClient` extend Pug.HttpApiClient's
+  `ApiClient`. Pug.HttpApiClient's raw calls do not throw on 422, so the client checks the status
+  itself.
+- **Target frameworks.** `Pug.Sal.WebApi` and `Pug.Sal.DependencyInjection` are implementations, so
+  they are `net10.0` only. `WebApi.Models` and `Client` are contracts and multi-target
+  (`net6.0;net8.0;net10.0`).
+- **DI** (`AddSal`):
+  - It registers both facades as singletons, as Scheduling does. The host registers
+    `IApplicationData<IDataSession>` and an `ISecurityManager` that resolves the principal per call.
+  - `INameNormalizer` and the no-op publisher are added with `TryAdd`.
+  - `AddSalDatasetImporter<T>( name )` adds a keyed singleton and records the name for the
+    registry. A repeated name is an `ArgumentException`.
+  - `AddSalChangePublisher<T>()` replaces the publisher, whether it is called before or after
+    `AddSal`.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
@@ -553,4 +603,5 @@ make up the first commit.
   `Pug.Sal.Importers.Csv`, duplicate mapping; 135 tests in all).
 - **5 Postgres.** DONE (`Pug.Sal.Data.Postgres`, `UnitsOfWork`, contract suites on both stores;
   135 SQLite + 69 Postgres tests).
-- **6 WebApi + Client + DI.** Not started.
+- **6 WebApi + Client + DI.** DONE (`Pug.Sal.WebApi.Models`, `Pug.Sal.WebApi`, `Pug.Sal.Client`,
+  `Pug.Sal.DependencyInjection`; TestServer API tests; 144 SQLite + 69 Postgres tests).

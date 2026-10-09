@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<Nullable>enable</Nullable>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Title>Pug.Sal.WebApi</Title>
+		<Description>Minimal API endpoints (sal/...) for the Pug.Sal locality directory and administration.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Web API</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<FrameworkReference Include="Microsoft.AspNetCore.App" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Abstractions/Pug.Sal.Abstractions.csproj" />
+		<ProjectReference Include="../Pug.Sal.WebApi.Models/Pug.Sal.WebApi.Models.csproj" />
+	</ItemGroup>
+
+</Project>

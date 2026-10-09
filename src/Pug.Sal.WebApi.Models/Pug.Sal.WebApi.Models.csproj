@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFrameworks>net6.0;net8.0;net10.0</TargetFrameworks>
+		<LangVersion>9</LangVersion>
+		<Title>Pug.Sal.WebApi.Models</Title>
+		<Description>HTTP contracts shared by the Pug.Sal Web API endpoints and Pug.Sal.Client: failure bodies and small results.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Web API Models</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Models/Pug.Sal.Models.csproj" />
+	</ItemGroup>
+
+</Project>

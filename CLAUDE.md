@@ -24,9 +24,9 @@ sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1"   # Postgres via Te
 | `Pug.Sal.Data.Abstractions` | Store `IDataSession` (storage primitives only, D15), `LocalityKey`, `DatasetVersions.Next`. |
 | `Pug.Sal.Data.SQLite` / `.Postgres` | Dapper stores + `GetSchemaUpgradeScripts()`. Keep them in step. |
 | `Pug.Sal.Importers.Csv` | Generic column-mapped CSV importer. |
-| `Pug.Sal.WebApi.Models` | Every HTTP surface contract. No ASP.NET dependency. |
-| `Pug.Sal.WebApi` | `MapSalEndpoints()` (`sal/…`). Authenticates only; the facades authorize. ETag/304 on reads. |
-| `Pug.Sal.Client` | `LocalityDirectoryClient` and `LocalityAdministrationClient`, the interfaces over HTTP. Reproduces the service's exceptions. References Abstractions only. |
+| `Pug.Sal.WebApi.Models` | Every HTTP surface contract (`BadRequestResultInfo`, `FailureInfo`, `DatasetVersionResult`). No ASP.NET dependency. |
+| `Pug.Sal.WebApi` | `MapSalEndpoints()` = `MapSalDirectoryEndpoints()` (`sal/…`) + `MapSalAdministrationEndpoints()` (`sal/admin/…`), D20. Authenticates only; the facades authorize. ETag/304 on reads. |
+| `Pug.Sal.Client` | `LocalityDirectoryClient` and `LocalityAdministrationClient`, the interfaces over HTTP. Reproduces the service's exceptions. References Abstractions and WebApi.Models only. |
 | `Pug.Sal.DependencyInjection` | `AddSal`, `AddSalDatasetImporter<T>`, `AddSalChangePublisher<T>`. |
 
 ## Domain invariants (do not regress)

@@ -1,0 +1,150 @@
+using System.Text;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Moq;
+using Pug.Application.Data;
+using Pug.Application.Security;
+using Pug.HttpApiClient;
+using Pug.Sal.Abstractions;
+using Pug.Sal.Client;
+using Pug.Sal.Data.Abstractions;
+using Pug.Sal.DependencyInjection;
+using Pug.Sal.Importers.Csv;
+using Pug.Sal.Models;
+using Pug.Sal.WebApi;
+
+namespace Pug.Sal.Tests.Infrastructure;
+
+// Hosts MapSalEndpoints() over a TestServer against a real SQLite store, composed with the
+// production DI extensions; only authentication and the security principal are faked. Users:
+// "reader" holds VIEW, "admin" every operation, anyone else nothing.
+//
+// Seeded through the clients themselves: AU (^\d{4}$, postcode required) with AU-NSW, AU-ACT and
+// AU-VIC, and a CSV import of Sydney 2000, Environa 2620 (NSW), Hume 2620 (ACT), St Kilda 3182.
+public sealed class SalApiFixture : IAsyncLifetime
+{
+	public const string Reader = "reader";
+
+	public const string Admin = "admin";
+
+	private readonly SalDatabaseFixture _database = new();
+
+	private IHost _host = null!;
+
+	public IServiceProvider Services => _host.Services;
+
+	public async Task InitializeAsync()
+	{
+		await _database.InitializeAsync();
+
+		_host = await new HostBuilder()
+					.ConfigureWebHost( web => web.UseTestServer().ConfigureServices( ConfigureServices ).Configure( Configure ) )
+					.StartAsync();
+
+		LocalityAdministrationClient admin = AdministrationClient( Admin );
+
+		await admin.CreateCountryAsync( new CountryDefinition
+		{
+			Code = "AU", Alpha3 = "AUS", Name = "Australia", PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true
+		} );
+
+		foreach( ( string code, string name ) in new[] { ( "AU-NSW", "New South Wales" ), ( "AU-ACT", "Australian Capital Territory" ), ( "AU-VIC", "Victoria" ) } )
+			await admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = "AU", Code = code, Name = name } );
+
+		await admin.ImportAsync( "AU",
+			new ImportRequest { Importer = "csv", Source = "seed", Options = new Dictionary<string, string> { [ "subdivisionPrefix" ] = "AU-" } },
+			new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality\nNSW,2000,Sydney\nNSW,2620,Environa\nACT,2620,Hume\nVIC,3182,St Kilda\n" ) ) );
+	}
+
+	public async Task DisposeAsync()
+	{
+		await _host.StopAsync();
+		_host.Dispose();
+		await _database.DisposeAsync();
+	}
+
+	private void ConfigureServices( IServiceCollection services )
+	{
+		services.AddRouting();
+		services.AddHttpContextAccessor();
+		services.AddAuthentication( TestAuthenticationHandler.SchemeName )
+				.AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>( TestAuthenticationHandler.SchemeName, _ => { } );
+		services.AddAuthorization();
+
+		services.AddSingleton<IApplicationData<IDataSession>>( _database.ApplicationData );
+		services.AddSingleton<ISecurityManager>( provider => CurrentRequestSecurity( provider.GetRequiredService<IHttpContextAccessor>() ) );
+
+		services.AddSalChangePublisher<RecordingPublisher>();
+		services.AddSal();
+		services.AddSalDatasetImporter<CsvDatasetImporter>( CsvDatasetImporter.DefaultName );
+	}
+
+	private static void Configure( IApplicationBuilder app )
+	{
+		app.UseRouting();
+		app.UseAuthentication();
+		app.UseAuthorization();
+		app.UseEndpoints( endpoints => endpoints.MapSalEndpoints() );
+	}
+
+	// The principal of the current request, granted by its user name.
+	private static ISecurityManager CurrentRequestSecurity( IHttpContextAccessor accessor )
+	{
+		string User() => accessor.HttpContext?.User.Identity?.Name ?? string.Empty;
+
+		Mock<IPrincipalIdentity> identity = new();
+		identity.Setup( x => x.Identifier ).Returns( User );
+
+		Mock<IPrincipal> principal = new();
+		principal.Setup( x => x.Identity ).Returns( identity.Object );
+		principal
+			.Setup( x => x.IsAuthorizedAsync( It.IsAny<IDictionary<string, string>>(), It.IsAny<string>(), It.IsAny<NounQualifier>(), It.IsAny<string>() ) )
+			.ReturnsAsync( ( IDictionary<string, string> _, string operation, NounQualifier _, string _ ) =>
+								User() == Admin || ( User() == Reader && operation == SecurityOperations.View ) );
+
+		Mock<ISecurityManager> manager = new();
+		manager.Setup( x => x.CurrentPrincipal ).Returns( principal.Object );
+
+		return manager.Object;
+	}
+
+	// A raw client authenticated as user; null for an unauthenticated caller.
+	public HttpClient CreateClient( string? user )
+	{
+		HttpClient client = _host.GetTestClient();
+
+		if( user is not null )
+			client.DefaultRequestHeaders.Add( TestAuthenticationHandler.UserHeader, user );
+
+		return client;
+	}
+
+	public IHttpApiClient CreateApiClient( string? user ) =>
+		new HttpApiClient.HttpApiClient( new Uri( "http://localhost/" ), new ClientFactory( this, user ) );
+
+	public LocalityDirectoryClient DirectoryClient( string? user ) => new( CreateApiClient( user ) );
+
+	public LocalityAdministrationClient AdministrationClient( string? user ) => new( CreateApiClient( user ) );
+
+	public RecordingPublisher Publisher => (RecordingPublisher)Services.GetRequiredService<ILocalityChangePublisher>();
+
+	private sealed class ClientFactory : IHttpClientFactory
+	{
+		private readonly SalApiFixture _fixture;
+
+		private readonly string? _user;
+
+		public ClientFactory( SalApiFixture fixture, string? user )
+		{
+			_fixture = fixture;
+			_user = user;
+		}
+
+		public HttpClient CreateClient( string name ) => _fixture.CreateClient( _user );
+	}
+}

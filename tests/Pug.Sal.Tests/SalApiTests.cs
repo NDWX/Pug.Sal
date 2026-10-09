@@ -1,0 +1,230 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Security.Authentication;
+using System.Text;
+using Microsoft.Extensions.DependencyInjection;
+using Moq;
+using Pug.Application.Security;
+using Pug.Sal.Abstractions;
+using Pug.Sal.Client;
+using Pug.Sal.DependencyInjection;
+using Pug.Sal.Importers.Csv;
+using Pug.Sal.Models;
+using Pug.Sal.Tests.Infrastructure;
+
+namespace Pug.Sal.Tests;
+
+// The HTTP surface end to end: LocalityDirectoryClient and LocalityAdministrationClient against
+// MapSalEndpoints() and the DI-composed facades.
+public class SalApiTests : IClassFixture<SalApiFixture>
+{
+	private readonly SalApiFixture _fixture;
+
+	private readonly LocalityDirectoryClient _directory;
+
+	private readonly LocalityAdministrationClient _admin;
+
+	public SalApiTests( SalApiFixture fixture )
+	{
+		_fixture = fixture;
+		_directory = fixture.DirectoryClient( SalApiFixture.Reader );
+		_admin = fixture.AdministrationClient( SalApiFixture.Admin );
+	}
+
+	// Tests that write use a country of their own, so the AU reads stay stable.
+	private static int _countryCounter;
+
+	private async Task<string> NewCountryAsync()
+	{
+		int n = Interlocked.Increment( ref _countryCounter );
+		string code = $"Q{(char)( 'A' + n % 26 )}";
+
+		await _admin.CreateCountryAsync( new CountryDefinition
+		{
+			Code = code, Name = "Country " + code, PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true
+		} );
+		await _admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = code, Code = "S1", Name = "One" } );
+
+		return code;
+	}
+
+	private static string[] Keys( IEnumerable<LocalityInfo> localities ) =>
+		localities.Select( l => $"{l.Definition.Subdivision}|{l.Definition.Postcode}|{l.Definition.Name}" ).ToArray();
+
+	// == Directory ==
+
+	[Fact]
+	public async Task DirectoryReadsRoundTrip()
+	{
+		CountryInfo au = await _directory.GetCountryAsync( "au" );
+		Versioned<IEnumerable<SubdivisionInfo>> subdivisions = await _directory.GetSubdivisionsAsync( "AU" );
+		Versioned<SubdivisionInfo> nsw = await _directory.GetSubdivisionAsync( "AU", "AU-NSW" );
+		Versioned<IEnumerable<LocalityInfo>> shared = await _directory.GetLocalitiesAsync( "AU", postcode: "2620" );
+		Versioned<LocalityInfo> kilda = await _directory.GetLocalityAsync( "AU", "AU-VIC", "3182", "st kilda" );
+		Versioned<IEnumerable<LocalityInfo>> search = await _directory.SearchLocalitiesAsync( "AU", "s" );
+
+		Assert.Equal( ( "AU", "Australia", DateTimeKind.Utc ), ( au.Definition.Code, au.Definition.Name, au.CurrentVersion.Kind ) );
+		Assert.Contains( await _directory.GetCountriesAsync(), c => c.Definition.Code == "AU" );
+		Assert.Contains( await _directory.GetCountryVersionsAsync(), v => v.Country == "AU" && v.Version == au.CurrentVersion );
+		Assert.Equal( new[] { "AU-ACT", "AU-NSW", "AU-VIC" }, subdivisions.Value.Select( s => s.Definition.Code ) );
+		Assert.Equal( au.CurrentVersion, subdivisions.DatasetVersion );
+		Assert.Equal( "New South Wales", nsw.Value.Definition.Name );
+		Assert.Equal( new[] { "AU-ACT|2620|Hume", "AU-NSW|2620|Environa" }, Keys( shared.Value ) );
+		Assert.Equal( "St Kilda", kilda.Value.Definition.Name );
+		Assert.Equal( new[] { "AU-VIC|3182|St Kilda", "AU-NSW|2000|Sydney" }, Keys( search.Value ) );
+	}
+
+	[Fact]
+	public async Task ValidationRoundTrips()
+	{
+		ValidationResult valid = await _directory.ValidateAsync( new AddressCandidate { Country = "AU", Subdivision = "nsw", Locality = "sydney", Postcode = "2000" } );
+		ValidationResult mismatch = await _directory.ValidateAsync( new AddressCandidate { Country = "AU", Subdivision = "ACT", Locality = "Environa", Postcode = "2620" } );
+
+		Assert.True( valid.IsValid );
+		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "AU-NSW", Locality = "Sydney", Postcode = "2000" }, valid.Match );
+		Assert.Equal( ValidationOutcomes.Mismatch, mismatch.Combination );
+		Assert.Equal( "AU-NSW", Assert.Single( mismatch.Suggestions ).Subdivision );
+	}
+
+	[Fact]
+	public async Task FailuresSurfaceAsTheFacadesExceptions()
+	{
+		UnknownCountryException country = await Assert.ThrowsAsync<UnknownCountryException>( () => _directory.GetCountryAsync( "zz" ) );
+		UnknownSubdivisionException subdivision = await Assert.ThrowsAsync<UnknownSubdivisionException>( () => _directory.GetSubdivisionAsync( "AU", "AU-XX" ) );
+		UnknownLocalityException locality = await Assert.ThrowsAsync<UnknownLocalityException>(
+			() => _directory.GetLocalityAsync( "AU", "AU-VIC", "2000", "Sydney" ) );
+		ArgumentException text = await Assert.ThrowsAsync<ArgumentException>( () => _directory.SearchLocalitiesAsync( "AU", "" ) );
+		ArgumentException limit = await Assert.ThrowsAsync<ArgumentException>( () => _directory.SearchLocalitiesAsync( "AU", "s", limit: 0 ) );
+
+		Assert.Equal( "ZZ", country.Country );
+		Assert.Equal( ( "AU", "AU-XX" ), ( subdivision.Country, subdivision.Subdivision ) );
+		Assert.Equal( ( "AU", "AU-VIC", "2000", "Sydney" ), ( locality.Country, locality.Subdivision, locality.Postcode, locality.Name ) );
+		Assert.Equal( "text", text.ParamName );
+		Assert.Equal( "limit", limit.ParamName );
+	}
+
+	[Fact]
+	public async Task AuthenticationAndAuthorization()
+	{
+		using HttpResponseMessage anonymous = await _fixture.CreateClient( null ).GetAsync( "sal/countries" );
+
+		Assert.Equal( HttpStatusCode.Unauthorized, anonymous.StatusCode );
+		await Assert.ThrowsAsync<AuthenticationException>( () => _fixture.DirectoryClient( null ).GetCountriesAsync() );
+		await Assert.ThrowsAsync<NotAuthorized>( () => _fixture.DirectoryClient( "nobody" ).GetCountriesAsync() );
+		await Assert.ThrowsAsync<NotAuthorized>( () => _fixture.AdministrationClient( SalApiFixture.Reader ).RetireCountryAsync( "AU" ) );
+		Assert.Equal( "seed", Assert.Single( await _fixture.AdministrationClient( SalApiFixture.Admin ).GetImportRunsAsync( "AU" ) ).Source );
+	}
+
+	[Fact]
+	public async Task ReadsAnswerIfNoneMatchUntilTheCountryChanges()
+	{
+		string code = await NewCountryAsync();
+		HttpClient client = _fixture.CreateClient( SalApiFixture.Reader );
+		string path = $"sal/countries/{code}/subdivisions";
+
+		using HttpResponseMessage first = await client.GetAsync( path );
+		EntityTagHeaderValue tag = first.Headers.ETag!;
+
+		using HttpRequestMessage again = new( HttpMethod.Get, path );
+		again.Headers.IfNoneMatch.Add( tag );
+		using HttpResponseMessage unchanged = await client.SendAsync( again );
+
+		await _admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = code, Code = "S2", Name = "Two" } );
+
+		using HttpRequestMessage after = new( HttpMethod.Get, path );
+		after.Headers.IfNoneMatch.Add( tag );
+		using HttpResponseMessage changed = await client.SendAsync( after );
+
+		Assert.Equal( HttpStatusCode.OK, first.StatusCode );
+		Assert.Equal( HttpStatusCode.NotModified, unchanged.StatusCode );
+		Assert.Equal( HttpStatusCode.OK, changed.StatusCode );
+		Assert.NotEqual( tag, changed.Headers.ETag );
+	}
+
+	// == Administration ==
+
+	[Fact]
+	public async Task AdministrationWritesRoundTripWithAuditContexts()
+	{
+		string code = await NewCountryAsync();
+
+		Versioned<Locality> created = await _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1000", Name = "Alpha" } );
+		Versioned<Locality> retired = await _admin.RetireLocalityAsync( code, "S1", "1000", "alpha" );
+		Versioned<Locality> reinstated = await _admin.ReinstateLocalityAsync( code, "S1", "1000", "Alpha" );
+		Country updated = await _admin.UpdateCountryAsync( ( await _admin.GetCountryAsync( code ) ).Definition with { Name = "Renamed" } );
+		Versioned<Subdivision> subdivision = await _admin.UpdateSubdivisionAsync( new SubdivisionDefinition { Country = code, Code = "S1", Name = "Uno" } );
+		DateTime deleted = await _admin.DeleteLocalityAsync( code, "S1", "1000", "Alpha" );
+
+		Assert.Equal( SalApiFixture.Admin, created.Value.Registration.Actor.Identifier );
+		Assert.Equal( created.DatasetVersion, created.Value.Registration.Timestamp );
+		Assert.Equal( retired.DatasetVersion, retired.Value.Retired );
+		Assert.Null( reinstated.Value.Retired );
+		Assert.Equal( "Renamed", updated.Definition.Name );
+		Assert.Equal( "Uno", subdivision.Value.Definition.Name );
+		Assert.Equal( deleted, ( await _admin.GetCountryAsync( code ) ).CurrentVersion );
+		Assert.Equal( DateTimeKind.Utc, deleted.Kind );
+		Assert.Contains( _fixture.Publisher.Changes, c => c.Country == code && c.Kind == ChangeKinds.Deleted && c.DatasetVersion == deleted );
+		await Assert.ThrowsAsync<UnknownLocalityException>( () => _admin.GetLocalityAsync( code, "S1", "1000", "Alpha" ) );
+	}
+
+	[Fact]
+	public async Task AdministrationFailuresSurfaceAsTheFacadesExceptions()
+	{
+		string code = await NewCountryAsync();
+
+		DuplicateEntryException duplicate = await Assert.ThrowsAsync<DuplicateEntryException>(
+			() => _admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = code, Code = "S1", Name = "Again" } ) );
+		ArgumentException invalid = await Assert.ThrowsAsync<ArgumentException>(
+			() => _admin.CreateCountryAsync( new CountryDefinition { Code = "AUS", Name = "Too long" } ) );
+
+		Assert.Equal( ( ChangeEntityTypes.Subdivision, "S1" ), ( duplicate.EntityType, duplicate.Key ) );
+		Assert.Equal( nameof(CountryDefinition.Code), invalid.ParamName );
+		await Assert.ThrowsAsync<UnknownSubdivisionException>(
+			() => _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S9", Postcode = "1000", Name = "Nowhere" } ) );
+		await Assert.ThrowsAsync<UnknownCountryException>( () => _admin.RetireCountryAsync( "ZY" ) );
+	}
+
+	[Fact]
+	public async Task ImportsStreamTheDatasetWithOptions()
+	{
+		string code = await NewCountryAsync();
+		Dictionary<string, string> options = new() { [ "locality" ] = "suburb", [ "subdivision" ] = "state", [ "delimiter" ] = ";" };
+
+		ImportRun run = await _admin.ImportAsync( code, new ImportRequest { Importer = "CSV", Source = "upload.csv", Options = options },
+			new MemoryStream( Encoding.UTF8.GetBytes( "state;postcode;suburb\nS1;1000;Alpha\nS1;1001;Beta\n" ) ) );
+
+		DatasetImportException invalid = await Assert.ThrowsAsync<DatasetImportException>(
+			() => _admin.ImportAsync( code, new ImportRequest { Importer = "csv" },
+				new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality\nS1,1000,Alpha\nS9,1001,Beta\n" ) ) ) );
+		UnknownDatasetImporterException importer = await Assert.ThrowsAsync<UnknownDatasetImporterException>(
+			() => _admin.ImportAsync( code, new ImportRequest { Importer = "xml" }, new MemoryStream() ) );
+
+		Assert.Equal( ( 2, "upload.csv", "CSV" ), ( run.Added, run.Source, run.Importer ) );
+		Assert.Equal( run.DatasetVersion, ( await _admin.GetCountryAsync( code ) ).CurrentVersion );
+		Assert.Equal( 2, invalid.Position );
+		Assert.Equal( "Unknown subdivision 'S9' of country '" + code + "'; imports never create subdivisions. (at 2)", invalid.Message );
+		Assert.Equal( "xml", importer.Importer );
+		Assert.Equal( run.Identifier, Assert.Single( await _admin.GetImportRunsAsync( code ) ).Identifier );
+		Assert.Contains( _fixture.Publisher.Imports, i => i.Identifier == run.Identifier );
+	}
+
+	// == Composition ==
+
+	[Fact]
+	public void AddSalComposesTheFacadesWithDefaults()
+	{
+		ServiceCollection services = new();
+		services.AddSingleton( Mock.Of<Pug.Application.Data.IApplicationData<Pug.Sal.Data.Abstractions.IDataSession>>() );
+		services.AddSingleton( Mock.Of<ISecurityManager>() );
+		services.AddSal();
+		services.AddSalDatasetImporter<CsvDatasetImporter>( "csv" );
+
+		using ServiceProvider provider = services.BuildServiceProvider();
+
+		Assert.IsType<LocalityDirectory>( provider.GetRequiredService<ILocalityDirectory>() );
+		Assert.IsType<LocalityAdministration>( provider.GetRequiredService<ILocalityAdministration>() );
+		Assert.Same( NullLocalityChangePublisher.Instance, provider.GetRequiredService<ILocalityChangePublisher>() );
+		Assert.IsType<CsvDatasetImporter>( provider.GetRequiredService<IDatasetImporterRegistry>().GetImporter( "CSV" ) );
+		Assert.Throws<ArgumentException>( () => services.AddSalDatasetImporter<CsvDatasetImporter>( "Csv" ) );
+	}
+}

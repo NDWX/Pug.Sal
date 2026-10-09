@@ -6,6 +6,10 @@
   <Project Path="src/Pug.Sal.Abstractions/Pug.Sal.Abstractions.csproj" />
   <Project Path="src/Pug.Sal/Pug.Sal.csproj" />
   <Project Path="src/Pug.Sal.Importers.Csv/Pug.Sal.Importers.Csv.csproj" />
+  <Project Path="src/Pug.Sal.WebApi.Models/Pug.Sal.WebApi.Models.csproj" />
+  <Project Path="src/Pug.Sal.WebApi/Pug.Sal.WebApi.csproj" />
+  <Project Path="src/Pug.Sal.Client/Pug.Sal.Client.csproj" />
+  <Project Path="src/Pug.Sal.DependencyInjection/Pug.Sal.DependencyInjection.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/Pug.Sal.Tests/Pug.Sal.Tests.csproj" />
     <Project Path="tests/Pug.Sal.Postgres.Tests/Pug.Sal.Postgres.Tests.csproj" />

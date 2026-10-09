@@ -10,6 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="10.0.1">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -20,6 +24,7 @@
     <!-- Override Microsoft.Data.Sqlite's transitive SQLitePCLRaw (2.1.11, flagged by GHSA-2m69-gcr7-jv3q)
          with the patched 3.x native bundle. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="xunit" Version="2.9.3" />
@@ -37,6 +42,9 @@
     <ProjectReference Include="../../src/Pug.Sal/Pug.Sal.csproj" />
     <ProjectReference Include="../../src/Pug.Sal.Importers.Csv/Pug.Sal.Importers.Csv.csproj" />
     <ProjectReference Include="../../src/Pug.Sal.Data.SQLite/Pug.Sal.Data.SQLite.csproj" />
+    <ProjectReference Include="../../src/Pug.Sal.WebApi/Pug.Sal.WebApi.csproj" />
+    <ProjectReference Include="../../src/Pug.Sal.Client/Pug.Sal.Client.csproj" />
+    <ProjectReference Include="../../src/Pug.Sal.DependencyInjection/Pug.Sal.DependencyInjection.csproj" />
   </ItemGroup>
 
 </Project>
