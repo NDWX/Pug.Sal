@@ -546,6 +546,9 @@ reads, and the two interfaces get their own implementations.
     subdivision and postcode may be absent.
   - Where a route names the country, subdivision or code, the route wins over the body.
   - `MapSalEndpoints()` maps both. A read-only host maps `MapSalDirectoryEndpoints()` alone.
+- **Authentication.** Every endpoint calls `RequireAuthorization()` (authenticated caller, default
+  policy), so an anonymous caller gets 401 and never reaches a facade. Authorization stays with the
+  facades (D8). `EndpointMetadataTests` checks the metadata and an anonymous request to every route.
 - **Failures** are mapped by `SalResults` and reversed by the client's `ApiFailures`:
   - 403 for `NotAuthorized`;
   - 400 with a `BadRequestResultInfo` for `ArgumentException`;
@@ -560,7 +563,9 @@ reads, and the two interfaces get their own implementations.
 
   Tags are per URL. `If-None-Match` that matches (or `*`) gets 304. The read still runs, so the
   saving is bandwidth, not database work.
-- **Imports over HTTP** send the dataset as the raw request body (any media type). `importer` and
+- **Imports over HTTP** send the dataset as the raw request body, as `application/octet-stream`,
+  `text/csv` or `text/plain` (`SalAdministrationEndpoints.ImportMediaTypes`). Routing refuses any
+  other media type with 415 before authentication runs, so even an anonymous caller gets 415. `importer` and
   `source` go in the query, and each `option.<name>=<value>` becomes `Options[name]`. Kestrel's
   request size limit applies; hosts importing large datasets may need to raise it.
 - **Clients.** `LocalityDirectoryClient` and `LocalityAdministrationClient` extend Pug.HttpApiClient's

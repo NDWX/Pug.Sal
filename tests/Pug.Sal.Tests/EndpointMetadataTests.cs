@@ -1,3 +1,6 @@
+using System.Net;
+using System.Text;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -5,14 +8,18 @@ using Pug.Sal.Tests.Infrastructure;
 
 namespace Pug.Sal.Tests;
 
-// The OpenAPI metadata MapSalEndpoints() attaches (DECISIONS D20): every endpoint is named, tagged
-// and summarized, and declares exactly the statuses it can produce.
+// What MapSalEndpoints() attaches to every endpoint (DECISIONS D8, D20): an authentication
+// requirement, and OpenAPI metadata (named, tagged, summarized, declaring exactly the statuses it can
+// produce).
 public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 {
+	private readonly SalApiFixture _fixture;
+
 	private readonly RouteEndpoint[] _endpoints;
 
 	public EndpointMetadataTests( SalApiFixture fixture )
 	{
+		_fixture = fixture;
 		_endpoints = fixture.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
 							.Where( e => e.RoutePattern.RawText!.StartsWith( "sal/", StringComparison.Ordinal ) )
 							.ToArray();
@@ -51,7 +58,7 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 		{ "SalAdminRetireLocality", new[] { 200, 400, 403, 404 } },
 		{ "SalAdminReinstateLocality", new[] { 200, 400, 403, 404 } },
 		{ "SalAdminDeleteLocality", new[] { 200, 400, 403, 404 } },
-		{ "SalAdminImport", new[] { 200, 400, 403, 404, 422 } }
+		{ "SalAdminImport", new[] { 200, 400, 403, 404, 415, 422 } }
 	};
 
 	private RouteEndpoint Named( string name ) =>
@@ -69,6 +76,37 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 							tag => tag is "Sal" or "Sal administration" );
 			Assert.False( string.IsNullOrWhiteSpace( endpoint.Metadata.GetMetadata<IEndpointSummaryMetadata>()?.Summary ) );
 		} );
+	}
+
+	[Fact]
+	public void EveryEndpointRequiresAuthorization()
+	{
+		Assert.All( _endpoints, endpoint => Assert.NotEmpty( endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>() ) );
+	}
+
+	// Every route, called without credentials, is refused before reaching a facade.
+	[Fact]
+	public async Task EveryEndpointRefusesAnAnonymousCaller()
+	{
+		HttpClient anonymous = _fixture.CreateClient( null );
+
+		foreach( RouteEndpoint endpoint in _endpoints )
+		{
+			string method = Assert.Single( endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods );
+			string path = endpoint.RoutePattern.RawText!.Replace( "{country}", "AU" ).Replace( "{subdivision}", "AU-NSW" ) +
+						"?name=Sydney&text=s&importer=csv";
+
+			using HttpRequestMessage request = new( new HttpMethod( method ), path );
+
+			// A body each endpoint accepts, so the refusal is authentication's, not content negotiation's.
+			if( endpoint.Metadata.GetMetadata<IAcceptsMetadata>() is { } accepts )
+				request.Content = new StringContent( accepts.ContentTypes.Contains( "application/json" ) ? "{}" : "locality\nA\n",
+													Encoding.UTF8, accepts.ContentTypes[ 0 ] );
+
+			using HttpResponseMessage response = await anonymous.SendAsync( request );
+
+			Assert.True( response.StatusCode == HttpStatusCode.Unauthorized, $"{method} {path} answered {response.StatusCode}" );
+		}
 	}
 
 	[Theory]

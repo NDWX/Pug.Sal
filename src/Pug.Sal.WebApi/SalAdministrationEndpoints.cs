@@ -21,7 +21,8 @@ namespace Pug.Sal.WebApi
 		/// further prefix.
 		/// Every endpoint requires an authenticated caller; administration itself authorizes. Reads
 		/// carry an ETag as the directory's do. An import posts the dataset itself as the request
-		/// body (any media type), with the importer, source label and options as query parameters.
+		/// body (one of <see cref="ImportMediaTypes"/>), with the importer, source label and options
+		/// as query parameters.
 		/// Each endpoint carries OpenAPI metadata (name, tag, summary, request and response types);
 		/// the host surfaces it, typically in development only, by configuring
 		/// <c>AddEndpointsApiExplorer()</c> with <c>AddSwaggerGen()</c>, or
@@ -164,8 +165,9 @@ namespace Pug.Sal.WebApi
 			Endpoint( routes.MapPost( "sal/admin/countries/{country}/imports", Import ), "SalAdminImport",
 					"Import a dataset covering the whole country" )
 				.WithDescription( ImportDescription )
-				.Accepts<Stream>( "application/octet-stream", "text/csv", "text/plain" )
+				.Accepts<Stream>( ImportMediaTypes[ 0 ], ImportMediaTypes[ 1.. ] )
 				.Produces<ImportRun>()
+				.Produces( StatusCodes.Status415UnsupportedMediaType )
 				.Invalid()
 				.NotFound()
 				.Produces<FailureInfo>( StatusCodes.Status422UnprocessableEntity );
@@ -173,9 +175,14 @@ namespace Pug.Sal.WebApi
 			return routes;
 		}
 
+		// The media types an import body may be sent as. Routing refuses others with 415, before
+		// authentication runs.
+		public static readonly string[] ImportMediaTypes = { "application/octet-stream", "text/csv", "text/plain" };
+
 		// The option.<name> parameters are open-ended, so no handler parameter declares them.
 		private const string ImportDescription =
-			"The request body is the dataset itself, in the importer's format (any media type). Query parameters: " +
+			"The request body is the dataset itself, in the importer's format, sent as application/octet-stream, text/csv or " +
+			"text/plain (any other media type is refused with 415). Query parameters: " +
 			"importer (required) names a registered dataset importer, matched case-insensitively (e.g. csv); " +
 			"source (optional) is a free-form label recorded on the import run; " +
 			"option.<name>=<value> (any number) passes importer-specific options, each becoming ImportRequest.Options[<name>]. " +
