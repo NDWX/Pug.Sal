@@ -12,12 +12,7 @@ namespace Pug.Sal.Tests;
 // order, as DbUp would).
 public sealed class PostgresDatabaseFixture : IStoreFixture, IAsyncLifetime
 {
-	// The official image through AWS's public mirror of Docker Hub's library: anonymous Docker Hub
-	// pulls are capped per IP over hours, which shared CI runners exhaust (the Ryuk image is
-	// redirected the same way in postgres.runsettings).
-	public const string Image = "public.ecr.aws/docker/library/postgres:17-alpine";
-
-	private readonly PostgreSqlContainer _container = new PostgreSqlBuilder( Image ).Build();
+	private readonly PostgreSqlContainer _container = new PostgreSqlBuilder( "postgres:17-alpine" ).Build();
 
 	public IApplicationData<IDataSession> ApplicationData { get; private set; } = null!;
 
