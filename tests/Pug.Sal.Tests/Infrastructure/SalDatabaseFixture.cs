@@ -1,3 +1,4 @@
+using Dapper;
 using DbUp;
 using DbUp.Builder;
 using DbUp.Engine;
@@ -12,7 +13,7 @@ namespace Pug.Sal.Tests.Infrastructure;
 /// Provisions a fresh, isolated SQLite database for the Sal store (migrated from the
 /// <see cref="DapperData"/> schema scripts).
 /// </summary>
-public sealed class SalDatabaseFixture : IAsyncLifetime
+public sealed class SalDatabaseFixture : IStoreFixture, IAsyncLifetime
 {
 	private string? _dbPath;
 	private bool _disposed;
@@ -37,6 +38,13 @@ public sealed class SalDatabaseFixture : IAsyncLifetime
 		ApplicationData = data;
 
 		return Task.CompletedTask;
+	}
+
+	public async Task<string[]> QueryTextAsync( string sql, object parameters )
+	{
+		await using SqliteConnection connection = new( ConnectionString );
+
+		return ( await connection.QueryAsync<string>( sql, parameters ) ).ToArray();
 	}
 
 	public Task DisposeAsync()

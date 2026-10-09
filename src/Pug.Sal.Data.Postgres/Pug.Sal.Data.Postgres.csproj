@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net10.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<Title>Pug.Sal.Data.Postgres</Title>
+		<Description>PostgreSQL store for Pug.Sal: countries, subdivisions, localities and import runs, with pg_trgm similarity search.</Description>
+		<PackageTags>Pug Sal Address Postcode Locality Postgres Data</PackageTags>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="../Pug.Sal.Data.Abstractions/Pug.Sal.Data.Abstractions.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Dapper" Version="2.1.79" />
+		<PackageReference Include="Npgsql" Version="10.0.3" />
+		<PackageReference Include="Pug.Application.Data" Version="1.4.1" />
+	</ItemGroup>
+
+</Project>

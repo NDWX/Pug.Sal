@@ -1,6 +1,4 @@
-using Dapper;
-using Microsoft.Data.Sqlite;
-using Pug.Application.Data;
+using System.Data.Common;
 using Pug.Effable;
 using Pug.Sal.Data.Abstractions;
 using Pug.Sal.Models;
@@ -8,13 +6,15 @@ using Pug.Sal.Tests.Infrastructure;
 
 namespace Pug.Sal.Tests;
 
-public class SalStoreTests : IClassFixture<SalDatabaseFixture>
+// The IDataSession contract, run against every store: SqliteStoreTests here, PostgresStoreTests in
+// Pug.Sal.Postgres.Tests. Keeping the stores in step means both pass the whole suite.
+public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> where TFixture : class, IStoreFixture
 {
 	private static readonly DateTime Base = new( 2026, 3, 1, 8, 30, 15, DateTimeKind.Utc );
 
-	private readonly SalDatabaseFixture _fixture;
+	private readonly TFixture _fixture;
 
-	public SalStoreTests( SalDatabaseFixture fixture )
+	protected StoreContractTests( TFixture fixture )
 	{
 		_fixture = fixture;
 	}
@@ -73,20 +73,43 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	// Test keys: upper-cased name, postcode as given.
 	private static string Key( string name ) => name.ToUpperInvariant();
 
+	// The leading prefix matches of a search. A store with similarity matching (Postgres) may follow
+	// them with close, non-prefix matches (DECISIONS D3), which must all come after.
+	private static Locality[] PrefixMatches( IEnumerable<Locality> results, string prefixKey )
+	{
+		Locality[] all = results.ToArray();
+		Locality[] prefixed = all.TakeWhile( l => Key( l.Definition.Name ).StartsWith( prefixKey, StringComparison.Ordinal ) ).ToArray();
+
+		Assert.DoesNotContain( all.Skip( prefixed.Length ), l => Key( l.Definition.Name ).StartsWith( prefixKey, StringComparison.Ordinal ) );
+
+		return prefixed;
+	}
+
 	private static LocalityKey KeyOf( Locality locality ) =>
 		new( locality.Definition.Country, locality.Definition.Subdivision, locality.Definition.Postcode, Key( locality.Definition.Name ) );
 
 	private Task InsertAsync( Locality locality ) =>
-		_fixture.ApplicationData.PerformAsync(
+		_fixture.ApplicationData.WriteAsync(
 				async ( session, context ) =>
-					await session.InsertLocalityAsync( context.locality, context.locality.Definition.Postcode, Key( context.locality.Definition.Name ) ),
+				{
+					await session.InsertLocalityAsync( context.locality, context.locality.Definition.Postcode, Key( context.locality.Definition.Name ) );
+
+					return true;
+				},
 				context: new { locality } );
 
 	private Task<T> ReadAsync<T>( Func<IDataSession, Task<T>> read ) =>
-		_fixture.ApplicationData.ExecuteAsync( async ( session, context ) => await read( session ), context: new { } );
+		_fixture.ApplicationData.ReadAsync( async ( session, context ) => await read( session ), context: new { } );
 
 	private Task WriteAsync( Func<IDataSession, Task> write ) =>
-		_fixture.ApplicationData.PerformAsync( async ( session, context ) => await write( session ), context: new { } );
+		_fixture.ApplicationData.WriteAsync(
+			async ( session, context ) =>
+			{
+				await write( session );
+
+				return true;
+			},
+			context: new { } );
 
 	private async Task<(string Country, string[] Names)> SeedAustraliaAsync()
 	{
@@ -348,11 +371,11 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		Locality[] sy = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "SY", null, 10 ) ) ).ToArray();
-		Locality[] s = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 10 ) ) ).ToArray();
+		Locality[] sy = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "SY", null, 10 ) ), "SY" );
+		Locality[] s = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 10 ) ), "S" );
 		Locality[] limited = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 2 ) ) ).ToArray();
-		Locality[] qld = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", "QLD", 10 ) ) ).ToArray();
-		Locality[] none = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "ZZ", null, 10 ) ) ).ToArray();
+		Locality[] qld = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", "QLD", 10 ) ), "S" );
+		Locality[] none = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "ZZ", null, 10 ) ), "ZZ" );
 
 		Assert.Equal( "Sydney", Assert.Single( sy ).Definition.Name );
 		Assert.Equal( new[] { "Spring Creek", "Spring Creek", "Sydney" }, s.Select( l => l.Definition.Name ) );
@@ -371,10 +394,10 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2003", "50X Offxtown" ) );
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2004", @"A\B" ) );
 
-		Locality[] percent = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50%", null, 10 ) ) ).ToArray();
-		Locality[] underscore = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50% OFF_", null, 10 ) ) ).ToArray();
-		Locality[] wild = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, "%", null, 10 ) ) ).ToArray();
-		Locality[] slash = ( await ReadAsync( s => s.SearchLocalitiesAsync( code, @"A\", null, 10 ) ) ).ToArray();
+		Locality[] percent = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50%", null, 10 ) ), "50%" );
+		Locality[] underscore = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50% OFF_", null, 10 ) ), "50% OFF_" );
+		Locality[] wild = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "%", null, 10 ) ), "%" );
+		Locality[] slash = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, @"A\", null, 10 ) ), @"A\" );
 
 		Assert.Equal( "50% Off_Town", Assert.Single( percent ).Definition.Name );
 		Assert.Equal( "50% Off_Town", Assert.Single( underscore ).Definition.Name );
@@ -412,7 +435,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 	[Fact]
 	public async Task LocalityUnderUnknownCountryIsRejected()
 	{
-		await Assert.ThrowsAsync<SqliteException>( () => InsertAsync( NewLocalityRecord( "QQ", null, null, "Nowhere" ) ) );
+		await Assert.ThrowsAnyAsync<DbException>( () => InsertAsync( NewLocalityRecord( "QQ", null, null, "Nowhere" ) ) );
 	}
 
 	[Fact]
@@ -487,9 +510,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 			Assert.Equal( now, ( await ReadAsync( s => s.GetCountryAsync( code ) ) )!.CurrentVersion );
 		}
 
-		await using SqliteConnection connection = new( _fixture.ConnectionString );
-		string stored = await connection.QuerySingleAsync<string>(
-							"select currentVersion from country where code = @code;", new { code } );
+		string stored = Assert.Single( await _fixture.QueryTextAsync( "select currentVersion from country where code = @code;", new { code } ) );
 		Assert.Equal( "202603010830160000000", stored );
 
 		// stamped is digit text too, so the stale-row comparison is exact to the tick.
@@ -498,9 +519,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Frac1", registered: Base.AddTicks( 1_000_000 ) ) );
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Frac2", registered: Base.AddTicks( 1_000_001 ) ) );
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2000", "Later", registered: Base.AddSeconds( 1 ) ) );
-		string[] stamps = ( await connection.QueryAsync<string>(
-								"select stamped from locality where country = @code order by stamped;", new { code } ) )
-							.ToArray();
+		string[] stamps = await _fixture.QueryTextAsync( "select stamped from locality where country = @code order by stamped;", new { code } );
 		Assert.Equal(
 				new[] { Base, Base.AddTicks( 1 ), Base.AddTicks( 1_000_000 ), Base.AddTicks( 1_000_001 ), Base.AddSeconds( 1 ) }
 					.Select( DatasetVersions.ToText ),
@@ -529,7 +548,7 @@ public class SalStoreTests : IClassFixture<SalDatabaseFixture>
 
 		// Same utcNow for everyone, so only the serialization gives distinct values.
 		Task<DateTime?>[] tasks = Enumerable.Range( 0, 6 ).Select( _ =>
-			Task.Run( () => _fixture.ApplicationData.ExecuteAsync(
+			Task.Run( () => _fixture.ApplicationData.WriteAsync(
 							async ( session, context ) =>
 							{
 								DateTime? version = await session.AdvanceVersionAsync( context.code, context.now );

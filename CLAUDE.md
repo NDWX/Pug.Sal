@@ -11,6 +11,7 @@ decided with the user.
 ```sh
 dotnet build Pug.Sal.slnx -warnaserror -m:1
 dotnet test tests/Pug.Sal.Tests -m:1
+sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1"   # Postgres via Testcontainers
 ```
 
 ## Solution layout (planned; see the phase status in DECISIONS.md)
@@ -64,7 +65,7 @@ dotnet test tests/Pug.Sal.Tests -m:1
   - `Country.CurrentVersion` (and `CountryInfo`'s) is bumped in the same transaction as every write to that country,
     once per import.
   - It strictly increases: `max( utcNow, previous + 1 tick )`.
-  - Every version-valued column (`currentVersion`, `datasetVersion`, `stamped`) is stored as
+  - Every version-valued column (`currentVersion`, `datasetVersion`, `stamped`, and `retired`, D19) is stored as
     numeric text `yyyyMMddHHmmssfffffff` (UTC), in every store (`DatasetVersions.ToText`).
   - Every read returns the version it read at.
 - **Change events:** published after commit and best-effort. A publisher failure never fails or
@@ -87,7 +88,11 @@ dotnet test tests/Pug.Sal.Tests -m:1
 - Contracts multi-target `net6.0;net8.0;net10.0` (`LangVersion` 9); implementations are `net10.0`.
 - Shared package metadata lives in `Directory.Build.props`.
 - Tests: xUnit, per-fixture SQLite temp DBs migrated by DbUp, Moq only for `ISecurityManager`.
-- Postgres tests use Testcontainers via `sg docker -c "…"`.
+- Store and administration behaviour is tested by contract suites (`StoreContractTests<T>`,
+  `LocalityAdministrationContractTests<T>`) that run against both stores. Postgres tests
+  (`tests/Pug.Sal.Postgres.Tests`, linked sources) use Testcontainers via `sg docker -c "…"`.
+- Units of work go through `UnitsOfWork.ReadAsync` / `WriteAsync` (D19), never a bare
+  `ExecuteAsync`, so the isolation levels hold in Postgres.
 
 ## Workflow requirement
 

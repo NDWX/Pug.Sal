@@ -1,11 +1,13 @@
 <Solution>
   <Project Path="src/Pug.Sal.Data.Abstractions/Pug.Sal.Data.Abstractions.csproj" />
   <Project Path="src/Pug.Sal.Data.SQLite/Pug.Sal.Data.SQLite.csproj" />
+  <Project Path="src/Pug.Sal.Data.Postgres/Pug.Sal.Data.Postgres.csproj" />
   <Project Path="src/Pug.Sal.Models/Pug.Sal.Models.csproj" />
   <Project Path="src/Pug.Sal.Abstractions/Pug.Sal.Abstractions.csproj" />
   <Project Path="src/Pug.Sal/Pug.Sal.csproj" />
   <Project Path="src/Pug.Sal.Importers.Csv/Pug.Sal.Importers.Csv.csproj" />
   <Folder Name="/tests/">
     <Project Path="tests/Pug.Sal.Tests/Pug.Sal.Tests.csproj" />
+    <Project Path="tests/Pug.Sal.Postgres.Tests/Pug.Sal.Postgres.Tests.csproj" />
   </Folder>
 </Solution>

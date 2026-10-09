@@ -7,15 +7,17 @@ using Pug.Sal.Tests.Infrastructure;
 
 namespace Pug.Sal.Tests;
 
-public class LocalityAdministrationTests : IClassFixture<SalDatabaseFixture>
+// ILocalityAdministration over a real store, run against every store: SqliteLocalityAdministrationTests
+// here, PostgresLocalityAdministrationTests in Pug.Sal.Postgres.Tests.
+public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixture<TFixture> where TFixture : class, IStoreFixture
 {
-	private readonly SalDatabaseFixture _fixture;
+	private readonly TFixture _fixture;
 
 	private readonly RecordingPublisher _publisher = new();
 
 	private readonly LocalityAdministration _admin;
 
-	public LocalityAdministrationTests( SalDatabaseFixture fixture )
+	protected LocalityAdministrationContractTests( TFixture fixture )
 	{
 		_fixture = fixture;
 		_admin = Admin();

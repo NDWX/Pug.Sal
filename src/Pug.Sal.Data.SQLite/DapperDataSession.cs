@@ -147,7 +147,7 @@ namespace Pug.Sal.Data.SQLite
 			public bool postcodeRequired { get; set; }
 			public bool hasSubdivisions { get; set; }
 			public string currentVersion { get; set; } = null!;
-			public DateTime? retired { get; set; }
+			public string? retired { get; set; }
 			public ActionContext<Reference> registration { get; set; } = null!;
 			public ActionContext<Reference>? lastUpdate { get; set; }
 		}
@@ -158,7 +158,7 @@ namespace Pug.Sal.Data.SQLite
 			public string code { get; set; } = null!;
 			public string name { get; set; } = null!;
 			public string? type { get; set; }
-			public DateTime? retired { get; set; }
+			public string? retired { get; set; }
 			public ActionContext<Reference> registration { get; set; } = null!;
 			public ActionContext<Reference>? lastUpdate { get; set; }
 		}
@@ -169,7 +169,7 @@ namespace Pug.Sal.Data.SQLite
 			public string subdivision { get; set; } = null!;
 			public string? postcode { get; set; }
 			public string name { get; set; } = null!;
-			public DateTime? retired { get; set; }
+			public string? retired { get; set; }
 			public ActionContext<Reference> registration { get; set; } = null!;
 			public ActionContext<Reference>? lastUpdate { get; set; }
 		}
@@ -205,7 +205,11 @@ namespace Pug.Sal.Data.SQLite
 		// timestamptz columns say so), so the kind is stamped on read.
 		private static DateTime AsUtc( DateTime value ) => DateTime.SpecifyKind( value, DateTimeKind.Utc );
 
-		private static DateTime? AsUtc( DateTime? value ) => value is null ? null : AsUtc( value.Value );
+		// retired always equals the action timestamp, a dataset version, so it is stored the same
+		// way: DatasetVersions.TextFormat digits, exact to the tick in either store (DECISIONS D19).
+		private static string? RetiredText( DateTime? retired ) => retired is null ? null : DatasetVersions.ToText( retired.Value );
+
+		private static DateTime? RetiredFromText( string? text ) => text is null ? null : DatasetVersions.FromText( text );
 
 		// An ActionContext's timestamp is JSON; System.Text.Json yields Utc for a 'Z' timestamp, but
 		// the kind is stamped regardless so the contract does not depend on that.
@@ -225,7 +229,7 @@ namespace Pug.Sal.Data.SQLite
 					HasSubdivisions = row.hasSubdivisions
 				},
 				CurrentVersion = DatasetVersions.FromText( row.currentVersion ),
-				Retired = AsUtc( row.retired ),
+				Retired = RetiredFromText( row.retired ),
 				Registration = AsUtc( row.registration )!,
 				LastUpdate = AsUtc( row.lastUpdate )!
 			};
@@ -240,7 +244,7 @@ namespace Pug.Sal.Data.SQLite
 					Name = row.name,
 					Type = row.type!
 				},
-				Retired = AsUtc( row.retired ),
+				Retired = RetiredFromText( row.retired ),
 				Registration = AsUtc( row.registration )!,
 				LastUpdate = AsUtc( row.lastUpdate )!
 			};
@@ -256,7 +260,7 @@ namespace Pug.Sal.Data.SQLite
 					Postcode = row.postcode!,
 					Name = row.name
 				},
-				Retired = AsUtc( row.retired ),
+				Retired = RetiredFromText( row.retired ),
 				Registration = AsUtc( row.registration )!,
 				LastUpdate = AsUtc( row.lastUpdate )!
 			};
@@ -310,7 +314,7 @@ namespace Pug.Sal.Data.SQLite
 						postcodeRequired = country.Definition.PostcodeRequired,
 						hasSubdivisions = country.Definition.HasSubdivisions,
 						currentVersion = DatasetVersions.ToText( country.CurrentVersion ),
-						retired = country.Retired,
+						retired = RetiredText( country.Retired ),
 						registration = country.Registration,
 						lastUpdate = country.LastUpdate
 					}
@@ -376,7 +380,7 @@ namespace Pug.Sal.Data.SQLite
 		{
 			int affected = await Connection.ExecuteAsync(
 									"update country set retired = @retired, lastUpdate = @lastUpdate where code = @country;",
-									new { country, retired, lastUpdate }
+									new { country, retired = RetiredText( retired ), lastUpdate }
 								).ConfigureAwait( false );
 
 			return affected > 0;
@@ -422,7 +426,7 @@ namespace Pug.Sal.Data.SQLite
 						code = subdivision.Definition.Code,
 						name = subdivision.Definition.Name,
 						type = subdivision.Definition.Type,
-						retired = subdivision.Retired,
+						retired = RetiredText( subdivision.Retired ),
 						registration = subdivision.Registration,
 						lastUpdate = subdivision.LastUpdate
 					}
@@ -474,7 +478,7 @@ namespace Pug.Sal.Data.SQLite
 			int affected = await Connection.ExecuteAsync(
 									@"update subdivision set retired = @retired, lastUpdate = @lastUpdate
 										where country = @country and code = @subdivision;",
-									new { country, subdivision, retired, lastUpdate }
+									new { country, subdivision, retired = RetiredText( retired ), lastUpdate }
 								).ConfigureAwait( false );
 
 			return affected > 0;
@@ -499,7 +503,7 @@ namespace Pug.Sal.Data.SQLite
 				subdivision = locality.Definition.Subdivision ?? string.Empty,
 				postcode = locality.Definition.Postcode,
 				name = locality.Definition.Name,
-				retired = locality.Retired,
+				retired = RetiredText( locality.Retired ),
 				registration = locality.Registration,
 				lastUpdate = locality.LastUpdate,
 				postcodeKey = postcodeKey ?? string.Empty,
@@ -586,7 +590,7 @@ namespace Pug.Sal.Data.SQLite
 										subdivision = key.Subdivision ?? string.Empty,
 										postcodeKey = key.PostcodeKey ?? string.Empty,
 										nameKey = key.NameKey,
-										retired,
+										retired = RetiredText( retired ),
 										lastUpdate,
 										stamped = DatasetVersions.ToText( lastUpdate.Timestamp )
 									}

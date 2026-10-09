@@ -490,13 +490,52 @@ reads, and the two interfaces get their own implementations.
 - **SQLite and long imports:** while an import holds the write lock, other writers wait up to the
   connection's `busy_timeout`. Hosts importing large datasets should set it generously.
 
+## D19 — Postgres store and transaction isolation (phase 5, assistant's choices)
+
+- **Units of work set their own isolation** (`UnitsOfWork` in `Pug.Sal.Data.Abstractions`). Each one
+  runs in a transaction of its own (`RequiresNew`), never in a caller's ambient one.
+  - **Writes run at ReadCommitted.** Writers to a country serialize on the row lock that
+    `AdvanceVersionAsync` takes (`select … for update` in Postgres). Under the default Serializable,
+    a writer that waited for that lock fails with "could not serialize access due to concurrent
+    update" instead of proceeding.
+  - **Reads run at RepeatableRead**, so every statement of one read sees one snapshot. A read-only
+    transaction never fails at that level.
+  - **Why `RequiresNew`:** joining a caller's scope whose isolation level differs would throw.
+    Sal's data is its own, so nothing is lost by not joining.
+  - SQLite, with its session's own enlistment (D15), is serializable at any level.
+- **The Postgres store is kept in step with SQLite:**
+  - It has the same tables, columns, key semantics (`''` for none) and ordering.
+  - Codes, keys and version text use the `"C"` collation, so comparisons and ordering are bytewise,
+    as in SQLite.
+  - Duplicates map from `unique_violation` (23505) to `DuplicateKeyException`. Npgsql enlists
+    natively, so there is no enlistment workaround. A rollback test proves atomicity.
+- **`retired` is stored as version digit text in both stores.** It always equals an action
+  timestamp, which is a version, and Postgres `timestamptz` keeps only microseconds. This extends
+  the user's D6 directive to the one remaining timestamp column. The SQLite store changed with it;
+  nothing had been deployed.
+- **Similarity search (Postgres only, D3):**
+  - The schema runs `create extension if not exists pg_trgm`, so the role applying it needs the
+    right to do that. pg_trgm is trusted, so the database owner may create it.
+  - A GIN trigram index covers `nameKey`.
+  - Search returns prefix matches first, then non-prefix matches by `nameKey % prefix` (at
+    `pg_trgm.similarity_threshold`), best first, up to the limit.
+- **Shared contract suites.** `StoreContractTests<TFixture>` and
+  `LocalityAdministrationContractTests<TFixture>` run against both stores:
+  - `Sqlite*Tests` in `Pug.Sal.Tests`;
+  - `Postgres*Tests` in `tests/Pug.Sal.Postgres.Tests`, which links the shared sources and uses a
+    `postgres:17-alpine` Testcontainers container per fixture.
+
+  Search assertions take the leading prefix matches and require any similarity matches to come
+  after them.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
   `dotnet test tests/Pug.Sal.Tests -m:1` green.
 - Tests run against real SQLite stores (a per-fixture temp DB, DbUp-migrated) with Australian
   fixture data.
-- Postgres is checked with Testcontainers via `sg docker -c "…"`.
+- Postgres is checked with Testcontainers: `sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1"`
+  runs the same contract suites against a container.
 
 ## Phase status
 
@@ -512,5 +551,6 @@ make up the first commit.
   `AddressValidation`, `NameNormalizer`; AU fixture tests; 86 tests in all).
 - **4 Admin + import + events.** DONE (`LocalityAdministration`, `ImportCoordinator`,
   `Pug.Sal.Importers.Csv`, duplicate mapping; 135 tests in all).
-- **5 Postgres.** Not started.
+- **5 Postgres.** DONE (`Pug.Sal.Data.Postgres`, `UnitsOfWork`, contract suites on both stores;
+  135 SQLite + 69 Postgres tests).
 - **6 WebApi + Client + DI.** Not started.

@@ -1,5 +1,4 @@
 using Pug.Application.Data;
-using Pug.Application.Data.Extensions;
 using Pug.Application.Security;
 using Pug.Sal.Abstractions;
 using Pug.Sal.Data.Abstractions;
@@ -86,7 +85,7 @@ namespace Pug.Sal
 		// country does not exist. Checks nothing: callers authorize first.
 		protected async Task<Versioned<T>> ReadVersionedAsync<T>( string countryCode, Func<IDataSession, Country, Task<T>> read )
 		{
-			Versioned<T>? result = await ApplicationDataProvider.ExecuteAsync(
+			Versioned<T>? result = await ApplicationDataProvider.ReadAsync(
 											async ( session, context ) =>
 											{
 												Country? country = await session.GetCountryAsync( context.countryCode ).ConfigureAwait( false );
@@ -113,7 +112,7 @@ namespace Pug.Sal
 		{
 			await CheckAuthorizationAsync( SecurityOperations.View ).ConfigureAwait( false );
 
-			return await ApplicationDataProvider.ExecuteAsync(
+			return await ApplicationDataProvider.ReadAsync(
 							async ( session, context ) =>
 								await session.GetCountriesAsync( context.includeRetired ).ConfigureAwait( false ),
 							context: new { includeRetired }
@@ -125,7 +124,7 @@ namespace Pug.Sal
 		{
 			await CheckAuthorizationAsync( SecurityOperations.View ).ConfigureAwait( false );
 
-			return await ApplicationDataProvider.ExecuteAsync(
+			return await ApplicationDataProvider.ReadAsync(
 							async ( session, context ) =>
 								await session.GetCountryVersionsAsync().ConfigureAwait( false ),
 							context: new { }
@@ -139,7 +138,7 @@ namespace Pug.Sal
 
 			string code = CountryCode( country );
 
-			Country? found = await ApplicationDataProvider.ExecuteAsync(
+			Country? found = await ApplicationDataProvider.ReadAsync(
 									async ( session, context ) =>
 										await session.GetCountryAsync( context.code ).ConfigureAwait( false ),
 									context: new { code }

@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Runs the store and administration contract suites of Pug.Sal.Tests against PostgreSQL in a
+       Testcontainers container. Needs Docker: sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1". -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="10.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Dapper" Version="2.1.79" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="Npgsql" Version="10.0.3" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.15.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- The contract suites and the infrastructure they need, shared with Pug.Sal.Tests. -->
+  <ItemGroup>
+    <Compile Include="../Pug.Sal.Tests/StoreContractTests.cs" Link="Shared/StoreContractTests.cs" />
+    <Compile Include="../Pug.Sal.Tests/LocalityAdministrationContractTests.cs" Link="Shared/LocalityAdministrationContractTests.cs" />
+    <Compile Include="../Pug.Sal.Tests/Infrastructure/IStoreFixture.cs" Link="Shared/IStoreFixture.cs" />
+    <Compile Include="../Pug.Sal.Tests/Infrastructure/SecurityManagers.cs" Link="Shared/SecurityManagers.cs" />
+    <Compile Include="../Pug.Sal.Tests/Infrastructure/RecordingPublisher.cs" Link="Shared/RecordingPublisher.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Pug.Sal/Pug.Sal.csproj" />
+    <ProjectReference Include="../../src/Pug.Sal.Importers.Csv/Pug.Sal.Importers.Csv.csproj" />
+    <ProjectReference Include="../../src/Pug.Sal.Data.Postgres/Pug.Sal.Data.Postgres.csproj" />
+  </ItemGroup>
+
+</Project>

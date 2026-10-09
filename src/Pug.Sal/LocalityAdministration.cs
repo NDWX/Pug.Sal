@@ -1,7 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Pug.Application.Data;
-using Pug.Application.Data.Extensions;
 using Pug.Application.Security;
 using Pug.Effable;
 using Pug.Sal.Abstractions;
@@ -81,9 +80,13 @@ namespace Pug.Sal
 
 			try
 			{
-				await ApplicationDataProvider.PerformAsync(
+				await ApplicationDataProvider.WriteAsync(
 												async ( session, context ) =>
-													await session.InsertCountryAsync( context.country ).ConfigureAwait( false ),
+												{
+													await session.InsertCountryAsync( context.country ).ConfigureAwait( false );
+
+													return true;
+												},
 												context: new { country }
 											)
 											.ConfigureAwait( false );
@@ -139,7 +142,7 @@ namespace Pug.Sal
 			await CheckAuthorizationAsync( SecurityOperations.Retire ).ConfigureAwait( false );
 
 			string code = CountryCode( country );
-			Country current = await ReadAsync( code, ( _, found ) => Task.FromResult<Country?>( found ) ).ConfigureAwait( false ) ??
+			Country current = await ReadCountryValueAsync( code, ( _, found ) => Task.FromResult<Country?>( found ) ).ConfigureAwait( false ) ??
 							throw new UnknownCountryException( code );
 
 			if( ( current.Retired is not null ) == retire )
@@ -417,7 +420,7 @@ namespace Pug.Sal
 										throw new UnknownDatasetImporterException( importerName );
 
 			// Unknown countries are refused before the dataset is read.
-			_ = await ReadAsync( code, ( _, found ) => Task.FromResult<Country?>( found ) ).ConfigureAwait( false ) ??
+			_ = await ReadCountryValueAsync( code, ( _, found ) => Task.FromResult<Country?>( found ) ).ConfigureAwait( false ) ??
 				throw new UnknownCountryException( code );
 
 			List<ImportRow> rows = new();
@@ -471,7 +474,7 @@ namespace Pug.Sal
 		{
 			Reference actor = CurrentActor();
 
-			return await ApplicationDataProvider.ExecuteAsync(
+			return await ApplicationDataProvider.WriteAsync(
 							async ( session, context ) =>
 							{
 								DateTime version = await session.AdvanceVersionAsync( context.countryCode, DateTime.UtcNow ).ConfigureAwait( false ) ??
@@ -487,8 +490,8 @@ namespace Pug.Sal
 		}
 
 		// A plain read of the country (null when unknown), then of a value derived from it.
-		private Task<T?> ReadAsync<T>( string countryCode, Func<IDataSession, Country, Task<T?>> read ) where T : class =>
-			ApplicationDataProvider.ExecuteAsync(
+		private Task<T?> ReadCountryValueAsync<T>( string countryCode, Func<IDataSession, Country, Task<T?>> read ) where T : class =>
+			ApplicationDataProvider.ReadAsync(
 				async ( session, context ) =>
 				{
 					Country? country = await session.GetCountryAsync( context.countryCode ).ConfigureAwait( false );

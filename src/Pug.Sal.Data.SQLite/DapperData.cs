@@ -11,12 +11,11 @@ namespace Pug.Sal.Data.SQLite
 	// key columns (subdivision, postcodeKey) is stored as '' so both are plain not-null primary-key
 	// columns, with the same semantics as the Postgres store (DECISIONS D15).
 	//
-	// Version-valued columns (country.currentVersion, importRun.datasetVersion, locality.stamped)
-	// are TEXT in DatasetVersions.TextFormat: the UTC timestamp's digits to the tick, fixed width,
-	// so they are exact and `stamped < @timestamp` is a correct text comparison (DECISIONS D6).
-	// Other timestamps (retired) are TEXT written by Microsoft.Data.Sqlite as
-	// 'yyyy-MM-dd HH:mm:ss.FFFFFFF' (UTC, no offset). The ActionContext columns are JSON, where the
-	// timestamp is ISO-8601 with a 'Z'.
+	// Version-valued columns (country.currentVersion, importRun.datasetVersion, locality.stamped),
+	// and retired (always an action timestamp, so a version, D19), are TEXT in
+	// DatasetVersions.TextFormat: the UTC timestamp's digits to the tick, fixed width, so they are
+	// exact and `stamped < @timestamp` is a correct text comparison (DECISIONS D6). The
+	// ActionContext columns are JSON, where the timestamp is ISO-8601 with a 'Z'.
 	public class DapperData : ApplicationData<IDataSession>
 	{
 		public DapperData( string location, DbProviderFactory dataProvider ) : base( location, dataProvider )
