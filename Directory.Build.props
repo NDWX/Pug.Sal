@@ -10,8 +10,7 @@
 		<!-- The one version of every package. A release tag's X.Y.Z must equal it (RELEASING.md);
 		     the release build passes the full version (e.g. 1.2.3-pre.<stamp>) as -p:Version. -->
 		<Version>0.0.1</Version>
-		<PackageLicenseExpression>Apache-2.0+</PackageLicenseExpression>
-		<License>Apache2.0</License>
+		<PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
 		<PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
 	</PropertyGroup>
 

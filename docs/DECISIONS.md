@@ -624,6 +624,16 @@ reads, and the two interfaces get their own implementations.
   - Sqetch defers its nuget.org push. Sal pushes, because publishing the packages is the point of a
     library release.
 
+## D22 — Licence: AGPL (user directive, 2026-10-10)
+
+- Every project is licensed under `AGPL-3.0-or-later`, replacing `Apache-2.0+`. The repository-root
+  `LICENSE` carries the AGPL text, and `Directory.Build.props` sets `PackageLicenseExpression`
+  for every package.
+- `-or-later` (rather than `-only`) follows Pug.Sqetch, where the user chose it.
+- The unused custom `<License>` property was removed.
+- Packages already on nuget.org (`0.0.1-pre.202610100035`) keep the Apache licence they were
+  published under. The next release carries the AGPL.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
