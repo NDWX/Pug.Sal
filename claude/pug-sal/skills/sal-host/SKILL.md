@@ -21,7 +21,7 @@ Sal is a library. A host is the application that embeds it: an ASP.NET Core serv
 | `Pug.Sal.WebApi` | `MapSalEndpoints` and friends. Skip it for in-process-only use |
 | `Pug.Sal.Importers.Csv` | The CSV importer, if the host imports datasets |
 | The engine's ADO.NET provider | `Npgsql`, or `Microsoft.Data.Sqlite` (the full package: the store references only `.Core`, and the host supplies the native bundle) |
-| `Pug.Application.Security` + `Pug.Application.Security.PrincipalIdentityAccessors.AspNetCore`, **3.1.x** | `SecurityManager` and the OAuth 2.0 identity accessor, unless you have your own `ISecurityManager`. Pin 3.1.x, to match the `Pug.Application.Security.Abstractions` 3.1.0 that Sal references. nuget.org also lists a date-versioned `2026.4.x` line, which NuGet ranks as newer but which is a different line |
+| `Pug.Application.Security` + `Pug.Application.Security.PrincipalIdentityAccessors.AspNetCore`, **3.x, from the release that identifies Entra callers by `oid`** | `SecurityManager` and the OAuth 2.0 identity accessor, unless you have your own `ISecurityManager`. Earlier accessors identify Entra users by `sub`, which the Entra role provider can't resolve (see "Security"). Stay on the 3.x line, to match the `Pug.Application.Security.Abstractions` 3.1.0 that Sal references. nuget.org also lists a date-versioned `2026.4.x` line, which NuGet ranks as newer but which is a different line |
 | `dbup-postgresql` / `dbup-sqlite` | Applying the schema (any migration tool works) |
 
 Every `Pug.Sal.*` package must be at **the same version**. They reference each other exactly.
@@ -46,7 +46,12 @@ builder.Services.AddSingleton<ISecurityManager>( p => new SecurityManager(
 
 // 3. Authentication, plus the host-defined admin policy used below
 builder.Services.AddAuthentication( JwtBearerDefaults.AuthenticationScheme )
-	.AddJwtBearer( o => { builder.Configuration.Bind( "Jwt", o ); o.MapInboundClaims = false; } );
+	.AddJwtBearer( o =>
+	{
+		builder.Configuration.Bind( "Jwt", o );
+		o.MapInboundClaims = false;                          // keep Entra's claim names: oid, tid, sub, scp, roles
+		o.TokenValidationParameters.RoleClaimType = "roles"; // so RequireRole reads Entra app roles
+	} );
 builder.Services.AddAuthorization( o => o.AddPolicy( "SalAdmin", p => p.RequireRole( "Sal.Admin" ) ) );
 
 // 4. Sal, its importers and its publisher
@@ -102,8 +107,12 @@ The rest of this skill explains each piece.
 **Every operation is authorized, reads included (DECISIONS D8).** Each facade call asks `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync( context, operation, resource, purpose )`. If that's false, the call throws `NotAuthorized`, which becomes 403 over HTTP. **If `CurrentPrincipal` is null, the call is refused, never trusted.**
 
 - **The facades are singletons**, so `CurrentPrincipal` must resolve the *current* caller each time it is read. `SecurityManager` does this through `IPrincipalIdentityAccessor`. `AddOAuth20IdentityAccessor()` reads `HttpContext.User`, and needs `AddHttpContextAccessor()`.
-- **The actor recorded on every write** (`Registration`, `LastUpdate`, `ImportRun.Performed`, events) is `CurrentPrincipal.Identity.Identifier`. The OAuth accessor takes it from the token's `sub` claim, or `client_id` for app-only tokens. **Set `MapInboundClaims = false` on JwtBearer.** Otherwise `sub` is renamed, and writes are recorded with an empty actor.
-- **Work outside a request**, such as a scheduled import or a seeding job, has no `HttpContext`, and so no principal, and is refused. Run it under an explicit identity: give it an `ISecurityManager` whose `CurrentPrincipal` is a service principal holding just the operations it needs (`IMPORT`, `VIEW`). Don't make your request-path security manager fall back to "system".
+- **The caller's identifier** is `CurrentPrincipal.Identity.Identifier`. Sal records it as the actor on every write (`Registration`, `LastUpdate`, `ImportRun.Performed`, events), and the role provider looks the caller up by it.
+  - **What the accessor uses:** when the token carries a tenant ID (`tid`, as Entra tokens do), the OAuth accessor takes the caller's **object ID (`oid`)**. Otherwise it falls back to `sub`.
+  - **Why it matters for Entra:** the object ID is what `AzureADRoleProvider` resolves in Graph, and it is the same across every application. Entra's `sub` is a per-application pairwise value, so Graph can't resolve it, and a user identified by it would get no roles.
+  - **Keep Entra's claim names:** set `MapInboundClaims = false` on JwtBearer, so `oid`, `tid` and `sub` reach the accessor under those names. Then set `TokenValidationParameters.RoleClaimType = "roles"`. Without it, ASP.NET looks for roles under its own long claim type, and every `RequireRole` policy fails.
+- **Unauthenticated callers get a principal, not null.** For a request without a valid token, the accessor returns a principal whose `Identity.IsAuthenticated` is false. Over HTTP, the endpoints refuse such a caller with 401 before Sal is reached. In-process, though, Sal only refuses a *missing* principal, so your `IAuthorizationProvider` must refuse an unauthenticated one: [the reference provider](references/SalRoleAuthorization.cs) checks `IsAuthenticated` first.
+- **Work outside a request**, such as a scheduled import or a seeding job, has no `HttpContext`, and so no authenticated caller, and is refused. Run it under an explicit identity: give it an `ISecurityManager` whose `CurrentPrincipal` is a service principal holding just the operations it needs (`IMPORT`, `VIEW`). Don't make your request-path security manager fall back to "system".
 
 **Permissions.** Sal checks these operations (`Pug.Sal.Abstractions.SecurityOperations`), always against `ResourceQualifiers.AllCountries` (`{ Type = "COUNTRY" }`). There are no per-country grants for now (D8).
 
@@ -177,7 +186,9 @@ Details are in `sal-administration`.
 
 - [ ] All `Pug.Sal.*` packages are at one version.
 - [ ] The store is registered as a singleton, and the schema is migrated before the first request.
-- [ ] `ISecurityManager` resolves the current caller per call. The actor identifier is non-empty on writes (check `Registration.Actor` after a test write). Background jobs run under an explicit principal.
+- [ ] `ISecurityManager` resolves the current caller per call. The actor identifier is the caller's Entra object ID (check `Registration.Actor` after a test write). Background jobs run under an explicit principal.
+- [ ] JwtBearer has `MapInboundClaims = false` and `RoleClaimType = "roles"`, and a role-gated policy admits a caller who holds the role.
+- [ ] The `IAuthorizationProvider` refuses an unauthenticated principal.
 - [ ] The `IAuthorizationProvider` maps every `SecurityOperations` value deliberately, `DELETE` and `IMPORT` included.
 - [ ] Endpoint scopes and policies match the provider's grants.
 - [ ] Every importer callers will use is registered, and the request size limit fits your datasets.

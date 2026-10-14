@@ -20,6 +20,11 @@ public sealed class SalRoleAuthorization : RoleBasedAuthorizationProvider
 
 	public override async Task<bool> PrincipalIsAuthorizedAsync( IDictionary<string, string> context, IPrincipal principal, string operation, NounQualifier resource, string purpose = "" )
 	{
+		// The identity accessor returns an unauthenticated principal for an anonymous caller, rather
+		// than none; never grant it anything.
+		if( principal?.Identity is not { IsAuthenticated: true } || string.IsNullOrEmpty( principal.Identity.Identifier ) )
+			return false;
+
 		if( resource.Type != SecurityObjectTypes.Country )
 			return false;
 

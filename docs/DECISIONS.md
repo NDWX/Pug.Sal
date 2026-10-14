@@ -723,4 +723,10 @@ instruction; the user chose to keep that work.)
     host sample compiles against Pug.Application.Security 3.1.0).
   - **S3, `sal-directory` and `sal-administration`.** DONE. The client wiring and validation samples
     compile against Pug.Sal.Client and Pug.HttpApiClient.OAuth2 0.5.1.
+  - **S2 amendment (user directive, 2026-10-14).** `sal-host` was amended for Pug.Application.Security's
+    change to `OAuth20IdentityAccessor`, which is in progress. The accessor now identifies callers by
+    `oid` when `tid` is present, falling back to `sub`, and returns an unauthenticated principal (not
+    null) for anonymous callers. The skill also adds JwtBearer `RoleClaimType = "roles"`, and the
+    reference provider refuses unauthenticated principals. **Verification is pending that release**,
+    including pinning the exact package version in the skill.
   - The marketplace entry is added once S3 is done.
