@@ -683,6 +683,8 @@ reads, and the two interfaces get their own implementations.
   - `INameNormalizer` has no country parameter, and Sal has no re-normalization tool, so changing
     the normalizer on a populated store means re-importing every country, which loses manual
     localities.
+  - D23's `Scopes` read only `scope`/`scp`. Entra app-only tokens carry `roles` instead, so a
+    surface used by service callers needs a host `Policy`. `sal-host` and `sal-directory` say so.
   - The contract test suites aren't packaged, so an out-of-repo driver links their sources from a
     checkout at the matching tag.
 
@@ -719,5 +721,6 @@ instruction; the user chose to keep that work.)
     `sal-name-normalizer`, `sal-dataset-importer`, `sal-change-publisher`, and the version check.
   - **S2, `sal-host`.** DONE (with a role-to-operation `IAuthorizationProvider` reference; the
     host sample compiles against Pug.Application.Security 3.1.0).
-  - **S3, `sal-directory` and `sal-administration`.** Pending.
+  - **S3, `sal-directory` and `sal-administration`.** DONE. The client wiring and validation samples
+    compile against Pug.Sal.Client and Pug.HttpApiClient.OAuth2 0.5.1.
   - The marketplace entry is added once S3 is done.
