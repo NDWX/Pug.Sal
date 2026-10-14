@@ -1,0 +1,13 @@
+{
+  "name": "pug-sal",
+  "description": "Skills for Pug.Sal, the address reference-data service (countries, subdivisions, localities, postcodes): writing its custom components (data-access driver, name normalizer, dataset importer, change event publisher), hosting it, and using its directory, validation and administration APIs. Versioned with the Pug.Sal packages.",
+  "version": "0.0.1",
+  "author": {
+    "name": "Andrian",
+    "email": "andrian@astraliscaelum.net"
+  },
+  "homepage": "https://github.com/NDWX/Pug.Sal",
+  "repository": "https://github.com/NDWX/Pug.Sal",
+  "license": "AGPL-3.0-or-later",
+  "keywords": ["pug", "sal", "address", "postcode", "locality", "dotnet"]
+}

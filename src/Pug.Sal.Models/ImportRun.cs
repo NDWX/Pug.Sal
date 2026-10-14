@@ -6,8 +6,8 @@ using Pug.Effable;
 namespace Pug.Sal.Models
 {
 	// Record of one completed bulk import. It is also the import event: after commit it is
-	// published, as is, through ILocalityChangePublisher.PublishImportAsync. Imports publish no
-	// LocalityChange.
+	// published, as is, through ILocalityChangeEventPublisher.PublishImportAsync. Imports publish
+	// no LocalityChange.
 	[DataContract]
 	public record ImportRun
 	{

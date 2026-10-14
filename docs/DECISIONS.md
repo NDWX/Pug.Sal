@@ -106,13 +106,13 @@ Full history (effective dating) is **not** required.
 ## D7 — Host-supplied event broker for audit (user directive)
 
 There is no event-broker abstraction anywhere in the Pug ecosystem, so Sal defines
-`ILocalityChangePublisher` in Abstractions. The host may register one, and if it does not, a no-op
+`ILocalityChangeEventPublisher` in Abstractions. The host may register one, and if it does not, a no-op
 publisher is used.
 
 - After commit, every write publishes `LocalityChange { Country, EntityType, Key, Kind, Actor
   (ActionContext<Reference>), DatasetVersion }`.
 - **An import is a different event (user directive, 2026-10-09).** It publishes its `ImportRun`
-  through `ILocalityChangePublisher.PublishImportAsync`, once, after commit. The event carries the
+  through `ILocalityChangeEventPublisher.PublishImportAsync`, once, after commit. The event carries the
   identifier, country, importer, source, the counts `Added`, `Reinstated`, `Deleted` and
   `Unchanged`, the dataset version and the performer.
   - Its rows publish no `LocalityChange`, so `ChangeEntityTypes.IMPORT` and `ChangeKinds.IMPORTED`
@@ -198,7 +198,7 @@ packages.
 
 - **"Locality" names the service surface (user directive, 2026-10-09).** The term "Geography" is
   dropped: `ILocalityDirectory` (reads), `ILocalityAdministration` (writes),
-  `ILocalityChangePublisher` and `LocalityChange` (the admin write event). They cover countries
+  `ILocalityChangeEventPublisher` and `LocalityChange` (the admin write event). They cover countries
   and subdivisions as well as localities; `LocalityChange.EntityType` says which.
 - **Definition + Info composition**, following Scheduling's `ScheduleInfo`:
   - `XDefinition` is what a maintainer authors. `XInfo` adds what Sal maintains: `Retired`,
@@ -477,7 +477,7 @@ reads, and the two interfaces get their own implementations.
     format).
 - **Publishing** happens after commit through the host's publisher. A failure is logged as a
   warning (`ILogger<LocalityAdministration>`, optional) and swallowed.
-  - `NullLocalityChangePublisher` is the default when the host registers none.
+  - `NullLocalityChangeEventPublisher` is the default when the host registers none.
   - `DatasetImporterRegistry` is the default registry. It is case-insensitive and refuses duplicate
     names.
 - **`Pug.Sal.Importers.Csv` (`CsvDatasetImporter`, conventional name `csv`):**
@@ -660,6 +660,32 @@ reads, and the two interfaces get their own implementations.
 - **Tests:** `EndpointAuthorizationTests` runs `SalApiFixture`'s host mapped with a directory scope
   and an administration policy (`ScopedSalApiFixture`).
 
+## D24 — Claude Code skills shipped as a versioned plugin (user directive, 2026-10-14)
+
+- **The `pug-sal` plugin lives in this repository**, at `claude/pug-sal`. It ships the skills that
+  teach an agent to extend, host and use Sal. Most users of the skills work in other repositories
+  (hosts, consumers, third-party drivers), so the skills ship as a plugin rather than as this
+  repository's own `.claude/skills`. Keeping the source here lets an API change and its skill
+  change land in the same commit.
+- **Distributed through the existing `pug-claude-plugins` marketplace** (`NDWX/claude-code-plugins`)
+  as a `git-subdir` source pinned to a release tag, so the skills a user installs match the packages
+  they reference.
+- **The skills** (the set was revised at the user's direction):
+  - `sal-development`, an overview of the extension points, and what is not one;
+  - one skill per extension point: `sal-data-driver`, `sal-name-normalizer`,
+    `sal-dataset-importer`, `sal-change-publisher`;
+  - `sal-host`, which mentions custom components as an option;
+  - `sal-directory` (reads and validation) and `sal-administration`.
+- **Version lockstep (user directive).** Every bump of `<Version>` also bumps the plugin's
+  `version` in the same commit, and the marketplace entry's `version` and `ref` follow the release.
+  `build.ps1` (`identify`, `test`) fails when the plugin and package versions differ.
+- **Known gaps the skills state rather than hide:**
+  - `INameNormalizer` has no country parameter, and Sal has no re-normalization tool, so changing
+    the normalizer on a populated store means re-importing every country, which loses manual
+    localities.
+  - The contract test suites aren't packaged, so an out-of-repo driver links their sources from a
+    checkout at the matching tag.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
@@ -688,3 +714,9 @@ instruction; the user chose to keep that work.)
   135 SQLite + 69 Postgres tests).
 - **6 WebApi + Client + DI.** DONE (`Pug.Sal.WebApi.Models`, `Pug.Sal.WebApi`, `Pug.Sal.Client`,
   `Pug.Sal.DependencyInjection`; TestServer API tests; 144 SQLite + 69 Postgres tests).
+- **Skills plugin (D24), in three phases:**
+  - **S1, overview and component skills.** DONE: `sal-development`, `sal-data-driver`,
+    `sal-name-normalizer`, `sal-dataset-importer`, `sal-change-publisher`, and the version check.
+  - **S2, `sal-host`.** Pending.
+  - **S3, `sal-directory` and `sal-administration`.** Pending.
+  - The marketplace entry is added once S3 is done.

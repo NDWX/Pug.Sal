@@ -6,8 +6,8 @@ using Pug.Effable;
 namespace Pug.Sal.Models
 {
 	// A committed register, update, retire, reinstate or delete made through the admin API,
-	// published to the host's ILocalityChangePublisher for audit. An import is a different event:
-	// it publishes its ImportRun, and none of its rows publishes a LocalityChange.
+	// published to the host's ILocalityChangeEventPublisher for audit. An import is a different
+	// event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.
 	[DataContract]
 	public record LocalityChange
 	{

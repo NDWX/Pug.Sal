@@ -5,11 +5,11 @@ using Pug.Sal.Models;
 namespace Pug.Sal.Tests.Infrastructure;
 
 // Records what LocalityAdministration publishes; optionally fails every call after recording it.
-public sealed class RecordingPublisher : ILocalityChangePublisher
+public sealed class RecordingEventPublisher : ILocalityChangeEventPublisher
 {
 	private readonly bool _fail;
 
-	public RecordingPublisher( bool fail = false )
+	public RecordingEventPublisher( bool fail = false )
 	{
 		_fail = fail;
 	}

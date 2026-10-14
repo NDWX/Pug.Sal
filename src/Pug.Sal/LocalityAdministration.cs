@@ -20,7 +20,7 @@ namespace Pug.Sal
 	{
 		private readonly IDatasetImporterRegistry _importers;
 
-		private readonly ILocalityChangePublisher _publisher;
+		private readonly ILocalityChangeEventPublisher _eventPublisher;
 
 		private readonly ILogger<LocalityAdministration> _logger;
 
@@ -30,12 +30,12 @@ namespace Pug.Sal
 										ISecurityManager securityManager,
 										INameNormalizer normalizer,
 										IDatasetImporterRegistry importers,
-										ILocalityChangePublisher publisher,
+										ILocalityChangeEventPublisher eventPublisher,
 										ILogger<LocalityAdministration>? logger = null )
 			: base( applicationData, securityManager, normalizer )
 		{
 			_importers = importers ?? throw new ArgumentNullException( nameof(importers) );
-			_publisher = publisher ?? throw new ArgumentNullException( nameof(publisher) );
+			_eventPublisher = eventPublisher ?? throw new ArgumentNullException( nameof(eventPublisher) );
 			_logger = logger ?? NullLogger<LocalityAdministration>.Instance;
 			_coordinator = new ImportCoordinator( normalizer );
 		}
@@ -531,11 +531,11 @@ namespace Pug.Sal
 			PublishAsync( publisher => publisher.PublishAsync( change ), change.Country );
 
 		// After commit and best-effort: a publisher failure is logged, never thrown (D7).
-		private async Task PublishAsync( Func<ILocalityChangePublisher, Task> publish, string country )
+		private async Task PublishAsync( Func<ILocalityChangeEventPublisher, Task> publish, string country )
 		{
 			try
 			{
-				await publish( _publisher ).ConfigureAwait( false );
+				await publish( _eventPublisher ).ConfigureAwait( false );
 			}
 			catch( Exception exception )
 			{

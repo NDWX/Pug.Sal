@@ -13,7 +13,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 {
 	private readonly TFixture _fixture;
 
-	private readonly RecordingPublisher _publisher = new();
+	private readonly RecordingEventPublisher _eventPublisher = new();
 
 	private readonly LocalityAdministration _admin;
 
@@ -32,12 +32,12 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		return $"{(char)( 'A' + n / 26 % 26 )}{(char)( 'A' + n % 26 )}";
 	}
 
-	private LocalityAdministration Admin( ISecurityManager? security = null, ILocalityChangePublisher? publisher = null ) =>
+	private LocalityAdministration Admin( ISecurityManager? security = null, ILocalityChangeEventPublisher? publisher = null ) =>
 		new( _fixture.ApplicationData,
 			security ?? SecurityManagers.Authorized( "alice" ),
 			new NameNormalizer(),
 			new DatasetImporterRegistry( new[] { KeyValuePair.Create<string, IDatasetImporter>( "csv", new CsvDatasetImporter() ) } ),
-			publisher ?? _publisher );
+			publisher ?? _eventPublisher );
 
 	private static CountryDefinition AustraliaLike( string code ) =>
 		new()
@@ -86,7 +86,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		.Select( l => $"{l.Definition.Subdivision}|{l.Definition.Postcode}|{l.Definition.Name}{( l.Retired is null ? "" : " (retired)" )}" )
 		.ToArray();
 
-	private LocalityChange[] ChangesOf( string code ) => _publisher.Changes.Where( c => c.Country == code ).ToArray();
+	private LocalityChange[] ChangesOf( string code ) => _eventPublisher.Changes.Where( c => c.Country == code ).ToArray();
 
 	// ActionContext compares by reference, so records holding one are compared through these.
 	private static object Snapshot( Country country ) =>
@@ -360,7 +360,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 	public async Task APublisherFailureNeverFailsTheWrite()
 	{
 		string code = NewCountry();
-		RecordingPublisher failing = new( fail: true );
+		RecordingEventPublisher failing = new( fail: true );
 		LocalityAdministration admin = Admin( publisher: failing );
 
 		await admin.CreateCountryAsync( AustraliaLike( code ) with { HasSubdivisions = false, PostcodeRequired = false } );
@@ -421,7 +421,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.NotNull( ( await _admin.GetSubdivisionAsync( code, "QLD" ) ).Value.Retired );
 
 		Assert.Equal( changesBefore, ChangesOf( code ).Length );
-		Assert.Same( run, Assert.Single( _publisher.Imports, i => i.Country == code ) );
+		Assert.Same( run, Assert.Single( _eventPublisher.Imports, i => i.Country == code ) );
 		Assert.Equal( run.Identifier, Assert.Single( await _admin.GetImportRunsAsync( code ) ).Identifier );
 	}
 
@@ -461,7 +461,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.Equal( 2, failure.Position );
 		Assert.Equal( before, await VersionAsync( code ) );
 		Assert.Equal( localities, await LocalitiesAsync( code, true ) );
-		Assert.DoesNotContain( _publisher.Imports, i => i.Country == code );
+		Assert.DoesNotContain( _eventPublisher.Imports, i => i.Country == code );
 		Assert.Empty( await _admin.GetImportRunsAsync( code ) );
 	}
 

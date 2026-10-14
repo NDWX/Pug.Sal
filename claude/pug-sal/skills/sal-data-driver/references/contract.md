@@ -1,0 +1,65 @@
+# `IDataSession` method contract
+
+This file repeats the comments in `src/Pug.Sal.Data.Abstractions/IDataSession.cs`, together with the rules in DECISIONS D13, D15 and D19. If the two disagree, the source at your package's tag wins.
+
+**General rules:**
+
+- A method addressing a record that doesn't exist does nothing and returns `false` (or `null`).
+- `Insert*` throws `DuplicateKeyException` when the key exists, whether the record is retired or not.
+- Every `DateTime` returned is UTC (`DateTimeKind.Utc`).
+- Records are the full `Country`, `Subdivision` and `Locality`, with their audit contexts.
+
+## Countries
+
+| Method | Contract |
+|---|---|
+| `InsertCountryAsync( Country )` | Insert, with `CurrentVersion` as given. |
+| `GetCountryAsync( code )` | The country, or null. |
+| `GetCountriesAsync( includeRetired )` | Ordered by code. |
+| `GetCountryVersionsAsync()` | Every country, retired ones included, as `CountryVersion`, ordered by code. |
+| `UpdateCountryAsync( CountryDefinition, lastUpdate )` | Replace the definition columns, but never the code. Stamp `LastUpdate`. |
+| `SetCountryRetiredAsync( code, retired?, lastUpdate )` | Set or clear (when `retired` is null) `Retired`. Stamp `LastUpdate`. |
+| `AdvanceVersionAsync( code, utcNow )` | Take the country row's write lock for the rest of the transaction, **then** read the current version. Write `DatasetVersions.Next( current, utcNow )` and return it, or null for an unknown country. Concurrent callers are serialized and each gets a distinct version. |
+
+## Subdivisions
+
+| Method | Contract |
+|---|---|
+| `InsertSubdivisionAsync( Subdivision )` | Insert. |
+| `GetSubdivisionAsync( country, code )` | The subdivision, or null. |
+| `GetSubdivisionsAsync( country, includeRetired )` | Ordered by code. |
+| `UpdateSubdivisionAsync( SubdivisionDefinition, lastUpdate )` | Replace `Name` and `Type`. Stamp `LastUpdate`. |
+| `SetSubdivisionRetiredAsync( country, code, retired?, lastUpdate )` | Set or clear `Retired`. Stamp `LastUpdate`. |
+
+## Localities
+
+The key is `LocalityKey( Country, Subdivision?, PostcodeKey?, NameKey )`. The caller has already normalized it, and the store never normalizes. A null `Subdivision` or `PostcodeKey` is stored as `''`.
+
+| Method | Contract |
+|---|---|
+| `InsertLocalityAsync( Locality, postcodeKey?, nameKey )` | Insert under the given keys. `stamped` = `Registration.Timestamp`. |
+| `GetLocalityAsync( LocalityKey )` | The locality, or null. |
+| `GetLocalitiesAsync( country, subdivision?, postcodeKey?, nameKey?, includeRetired )` | Each filter is applied only when given, as an exact match. Ordered by subdivision, then name key, then postcode key. |
+| `SearchLocalitiesAsync( country, namePrefixKey, subdivision?, limit )` | Current localities whose name key **starts with** the prefix, taken literally (wildcards match only themselves). Optionally restricted to one subdivision. Ordered by name key, then subdivision, then postcode key. At most `limit` rows. A store may append fuzzy matches after the prefix matches (Postgres: `pg_trgm`). |
+| `SetLocalityRetiredAsync( key, retired?, lastUpdate )` | Set or clear `Retired`. Stamp `LastUpdate`, and set `stamped` = `lastUpdate.Timestamp`. |
+| `DeleteLocalityAsync( key )` | Delete. Returns whether a row was deleted. |
+| `HasLocalitiesAsync( country )` | Whether any locality exists for the country, retired ones included. |
+
+## Imports
+
+| Method | Contract |
+|---|---|
+| `UpsertImportedLocalityAsync( Locality, postcodeKey?, nameKey, context )` | Key missing: insert it (`Registration` = context, `LastUpdate` null, current) and return `Added`. Key present and retired: clear `Retired`, stamp `LastUpdate` = context, and return `Reinstated`. Present and current: stamp `LastUpdate` = context and return `Unchanged`. In every case `stamped` = `context.Timestamp`. The caller passes each key only once per import. |
+| `DeleteLocalitiesStampedBeforeAsync( country, timestamp )` | `delete … where country = @c and stamped < @t`. Returns the count. |
+| `InsertImportRunAsync( ImportRun )` | Insert. |
+| `GetImportRunsAsync( country )` | Most recent first, by `DatasetVersion`, which is also the `Performed` timestamp. |
+
+## Stored forms
+
+| Column | Form |
+|---|---|
+| `country.currentVersion`, `importRun.datasetVersion`, `locality.stamped`, every `retired` | Text in `DatasetVersions.TextFormat` (`yyyyMMddHHmmssfffffff`, UTC), in a bytewise collation. |
+| `registration`, `lastUpdate`, `performed` | JSON text of `ActionContext<Reference>` (ISO-8601 timestamp with `Z`). |
+| Codes and keys | Text, compared and sorted bytewise (ordinal). |
+| `locality.subdivision`, `locality.postcodeKey` | `not null`, `''` for none. |
+| Booleans (`postcodeRequired`, `hasSubdivisions`) | The engine's boolean, or an integer 0/1. |

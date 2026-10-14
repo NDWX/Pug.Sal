@@ -85,7 +85,7 @@ public class SalApiFixture : IAsyncLifetime
 		services.AddSingleton<IApplicationData<IDataSession>>( _database.ApplicationData );
 		services.AddSingleton<ISecurityManager>( provider => CurrentRequestSecurity( provider.GetRequiredService<IHttpContextAccessor>() ) );
 
-		services.AddSalChangePublisher<RecordingPublisher>();
+		services.AddSalChangePublisher<RecordingEventPublisher>();
 		services.AddSal();
 		services.AddSalDatasetImporter<CsvDatasetImporter>( CsvDatasetImporter.DefaultName );
 	}
@@ -143,7 +143,7 @@ public class SalApiFixture : IAsyncLifetime
 
 	public LocalityAdministrationClient AdministrationClient( string? user ) => new( CreateApiClient( user ) );
 
-	public RecordingPublisher Publisher => (RecordingPublisher)Services.GetRequiredService<ILocalityChangePublisher>();
+	public RecordingEventPublisher EventPublisher => (RecordingEventPublisher)Services.GetRequiredService<ILocalityChangeEventPublisher>();
 
 	private sealed class ClientFactory : IHttpClientFactory
 	{

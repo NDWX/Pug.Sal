@@ -4,9 +4,9 @@ using Pug.Sal.Models;
 namespace Pug.Sal
 {
 	// The publisher used when the host registers none: change events go nowhere (DECISIONS D7).
-	public sealed class NullLocalityChangePublisher : ILocalityChangePublisher
+	public sealed class NullLocalityChangeEventPublisher : ILocalityChangeEventPublisher
 	{
-		public static NullLocalityChangePublisher Instance { get; } = new();
+		public static NullLocalityChangeEventPublisher Instance { get; } = new();
 
 		public Task PublishAsync( LocalityChange change ) => Task.CompletedTask;
 

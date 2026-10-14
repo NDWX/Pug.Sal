@@ -176,7 +176,7 @@ record("ImportRow",
 	])
 
 record("ImportRun",
-	"Record of one completed bulk import. It is also the import event: after commit it is published, as is, through ILocalityChangePublisher.PublishImportAsync. Imports publish no LocalityChange.",
+	"Record of one completed bulk import. It is also the import event: after commit it is published, as is, through ILocalityChangeEventPublisher.PublishImportAsync. Imports publish no LocalityChange.",
 	[
 		("string", "Identifier", True, None),
 		("string", "Country", True, None),
@@ -191,7 +191,7 @@ record("ImportRun",
 	], S + E)
 
 record("LocalityChange",
-	"A committed register, update, retire, reinstate or delete made through the admin API, published to the host's ILocalityChangePublisher for audit. An import is a different event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.",
+	"A committed register, update, retire, reinstate or delete made through the admin API, published to the host's ILocalityChangeEventPublisher for audit. An import is a different event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.",
 	[
 		("string", "Country", True, None),
 		("string", "EntityType", True, "One of ChangeEntityTypes."),

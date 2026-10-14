@@ -163,7 +163,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Assert.Equal( "Uno", subdivision.Value.Definition.Name );
 		Assert.Equal( deleted, ( await _admin.GetCountryAsync( code ) ).CurrentVersion );
 		Assert.Equal( DateTimeKind.Utc, deleted.Kind );
-		Assert.Contains( _fixture.Publisher.Changes, c => c.Country == code && c.Kind == ChangeKinds.Deleted && c.DatasetVersion == deleted );
+		Assert.Contains( _fixture.EventPublisher.Changes, c => c.Country == code && c.Kind == ChangeKinds.Deleted && c.DatasetVersion == deleted );
 		await Assert.ThrowsAsync<UnknownLocalityException>( () => _admin.GetLocalityAsync( code, "S1", "1000", "Alpha" ) );
 	}
 
@@ -205,7 +205,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Assert.Equal( "Unknown subdivision 'S9' of country '" + code + "'; imports never create subdivisions. (at 2)", invalid.Message );
 		Assert.Equal( "xml", importer.Importer );
 		Assert.Equal( run.Identifier, Assert.Single( await _admin.GetImportRunsAsync( code ) ).Identifier );
-		Assert.Contains( _fixture.Publisher.Imports, i => i.Identifier == run.Identifier );
+		Assert.Contains( _fixture.EventPublisher.Imports, i => i.Identifier == run.Identifier );
 	}
 
 	// == Composition ==
@@ -223,7 +223,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 
 		Assert.IsType<LocalityDirectory>( provider.GetRequiredService<ILocalityDirectory>() );
 		Assert.IsType<LocalityAdministration>( provider.GetRequiredService<ILocalityAdministration>() );
-		Assert.Same( NullLocalityChangePublisher.Instance, provider.GetRequiredService<ILocalityChangePublisher>() );
+		Assert.Same( NullLocalityChangeEventPublisher.Instance, provider.GetRequiredService<ILocalityChangeEventPublisher>() );
 		Assert.IsType<CsvDatasetImporter>( provider.GetRequiredService<IDatasetImporterRegistry>().GetImporter( "CSV" ) );
 		Assert.Throws<ArgumentException>( () => services.AddSalDatasetImporter<CsvDatasetImporter>( "Csv" ) );
 	}

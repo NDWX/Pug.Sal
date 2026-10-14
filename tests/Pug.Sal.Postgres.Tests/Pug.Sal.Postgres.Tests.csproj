@@ -37,7 +37,7 @@
     <Compile Include="../Pug.Sal.Tests/LocalityAdministrationContractTests.cs" Link="Shared/LocalityAdministrationContractTests.cs" />
     <Compile Include="../Pug.Sal.Tests/Infrastructure/IStoreFixture.cs" Link="Shared/IStoreFixture.cs" />
     <Compile Include="../Pug.Sal.Tests/Infrastructure/SecurityManagers.cs" Link="Shared/SecurityManagers.cs" />
-    <Compile Include="../Pug.Sal.Tests/Infrastructure/RecordingPublisher.cs" Link="Shared/RecordingPublisher.cs" />
+    <Compile Include="../Pug.Sal.Tests/Infrastructure/RecordingEventPublisher.cs" Link="Shared/RecordingEventPublisher.cs" />
   </ItemGroup>
 
   <ItemGroup>

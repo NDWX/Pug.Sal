@@ -54,6 +54,31 @@ Use it before tagging.
 
 The packages reference each other at that exact version.
 
+## Bumping the version
+
+The `pug-sal` Claude Code plugin, at `claude/pug-sal`, documents the packages and is versioned with
+them (DECISIONS D24). **Every package version bump also bumps the plugin's version:**
+
+1. In one commit, set `<Version>` in `Directory.Build.props` and `version` in
+   `claude/pug-sal/.claude-plugin/plugin.json` to the same `X.Y.Z`. Update the skills under
+   `claude/pug-sal/skills` in that commit too if the release changes anything they describe.
+   `build.ps1`'s `identify` and `test` stages fail when the two versions differ, so CI catches a
+   missed bump and a release tag cannot publish one.
+2. Tag the commit as usual.
+3. After the release, update the plugin's entry in the `pug-claude-plugins` marketplace
+   (`NDWX/claude-code-plugins`, `.claude-plugin/marketplace.json`). Set its `version` to `X.Y.Z` and
+   its source `ref` to the new tag, so users get the skills that match the packages:
+
+   ```json
+   { "name": "pug-sal",
+     "source": { "source": "git-subdir", "url": "https://github.com/NDWX/Pug.Sal.git",
+                 "path": "claude/pug-sal", "ref": "sal-vX.Y.Z" },
+     "version": "X.Y.Z" }
+   ```
+
+Users install it with `/plugin marketplace add NDWX/claude-code-plugins`, then
+`/plugin install pug-sal@pug-claude-plugins`.
+
 ## Building locally
 
 All logic lives in `build/build.ps1`, which needs PowerShell 7. The workflows only call it, so the

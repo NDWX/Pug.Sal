@@ -22,7 +22,7 @@ namespace Pug.Sal.Abstractions
 	//
 	// Every write commits together with a bump of the country's dataset version, returns the
 	// written record with that version, and is then published to the host's
-	// ILocalityChangePublisher, as a LocalityChange or, for an import, as its ImportRun. Countries
+	// ILocalityChangeEventPublisher, as a LocalityChange or, for an import, as its ImportRun. Countries
 	// and subdivisions are only ever retired, which is reversible; localities may also be deleted,
 	// by an administrator or by an import. Retiring a retired record, or reinstating a current one,
 	// changes nothing: it returns the record as it is, bumps nothing and publishes nothing.

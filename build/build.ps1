@@ -105,6 +105,20 @@ function Get-ProjectVersion
 	return $version[0].InnerText.Trim()
 }
 
+# The pug-sal Claude Code plugin is versioned with the packages (DECISIONS D24): every <Version> bump
+# bumps claude/pug-sal/.claude-plugin/plugin.json in the same commit.
+function Assert-PluginVersion
+{
+	$manifest = Join-Path $script:RepoRoot 'claude/pug-sal/.claude-plugin/plugin.json'
+	$pluginVersion = ( Get-Content -Raw $manifest | ConvertFrom-Json ).version
+	$projectVersion = Get-ProjectVersion
+
+	if( $pluginVersion -ne $projectVersion )
+	{
+		throw "plugin.json declares version $pluginVersion but Directory.Build.props declares $projectVersion; bump both together (RELEASING.md)"
+	}
+}
+
 # UTC, 24-hour, so stamps sort in build order.
 function Get-BuildStamp
 {
@@ -245,13 +259,16 @@ switch( $Stage )
 {
 	'identify'
 	{
+		Assert-PluginVersion
 		Write-StageOutputs ( Resolve-BuildIdentity -Ref $Ref )
 	}
 
-	# The completion gate (CLAUDE.md): the solution builds without warnings, and both test suites
-	# pass, the Postgres one against a Testcontainers container (Docker required).
+	# The completion gate (CLAUDE.md): the plugin and package versions agree, the solution builds
+	# without warnings, and both test suites pass, the Postgres one against a Testcontainers
+	# container (Docker required).
 	'test'
 	{
+		Assert-PluginVersion
 		Invoke-Native -FilePath 'dotnet' -Arguments @( 'build', $script:Solution, '-c', 'Release', '-warnaserror', '-m:1', '-nologo' )
 
 		Invoke-Native -FilePath 'dotnet' -Arguments @(

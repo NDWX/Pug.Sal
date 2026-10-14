@@ -26,7 +26,7 @@ namespace Pug.Sal.DependencyInjection
 			ImporterRegistrations registrations = GetOrAddRegistrations( services );
 
 			services.TryAddSingleton<INameNormalizer, NameNormalizer>();
-			services.TryAddSingleton<ILocalityChangePublisher>( NullLocalityChangePublisher.Instance );
+			services.TryAddSingleton<ILocalityChangeEventPublisher>( NullLocalityChangeEventPublisher.Instance );
 
 			services.TryAddSingleton<IDatasetImporterRegistry>(
 				provider => new DatasetImporterRegistry(
@@ -45,7 +45,7 @@ namespace Pug.Sal.DependencyInjection
 					provider.GetRequiredService<ISecurityManager>(),
 					provider.GetRequiredService<INameNormalizer>(),
 					provider.GetRequiredService<IDatasetImporterRegistry>(),
-					provider.GetRequiredService<ILocalityChangePublisher>(),
+					provider.GetRequiredService<ILocalityChangeEventPublisher>(),
 					provider.GetService<ILogger<LocalityAdministration>>() ) );
 
 			return services;
@@ -74,9 +74,9 @@ namespace Pug.Sal.DependencyInjection
 		// Publishes Sal's change events to the host's broker (DECISIONS D7), replacing the no-op
 		// publisher whether called before or after AddSal.
 		public static IServiceCollection AddSalChangePublisher<TPublisher>( this IServiceCollection services )
-			where TPublisher : class, ILocalityChangePublisher
+			where TPublisher : class, ILocalityChangeEventPublisher
 		{
-			services.Replace( ServiceDescriptor.Singleton<ILocalityChangePublisher, TPublisher>() );
+			services.Replace( ServiceDescriptor.Singleton<ILocalityChangeEventPublisher, TPublisher>() );
 
 			return services;
 		}

@@ -19,12 +19,17 @@ The same gate as one command, which CI runs on every branch push:
 tag-driven (`sal-v<X.Y.Z>`, `sal-pre-v<X.Y.Z>`, where X.Y.Z equals `<Version>` in
 `Directory.Build.props`). The workflows only call `build/build.ps1`; see `RELEASING.md`.
 
+**Bumping `<Version>` also bumps the `pug-sal` Claude Code plugin's `version`**
+(`claude/pug-sal/.claude-plugin/plugin.json`), in the same commit (D24); the build fails when they
+differ. The plugin's skills document the public API: when a change alters what one describes,
+update the skill in the same commit.
+
 ## Solution layout (planned; see the phase status in DECISIONS.md)
 
 | Project | Role |
 |---|---|
 | `Pug.Sal.Models` | `Country` / `Subdivision` / `Locality` (full, with audit contexts), `CountryInfo` / `SubdivisionInfo` / `LocalityInfo` (audit-free, `ToInfo()`), `Versioned<T>`, `AddressCandidate`, `ValidationResult`, `ImportRun`, `LocalityChange`, string-constant classes. |
-| `Pug.Sal.Abstractions` | `ILocalityDirectory` (reads), `ILocalityAdministration` (writes), `IDatasetImporter` + registry, `INameNormalizer`, `ILocalityChangePublisher`, security constants, domain exceptions. |
+| `Pug.Sal.Abstractions` | `ILocalityDirectory` (reads), `ILocalityAdministration` (writes), `IDatasetImporter` + registry, `INameNormalizer`, `ILocalityChangeEventPublisher`, security constants, domain exceptions. |
 | `Pug.Sal` | `LocalityDirectory` (`ILocalityDirectory`) and `LocalityAdministration` (`ILocalityAdministration`), separate classes (D16): authorization, normalization, validation, version bumps, change publishing. Import mechanics in an internal `ImportCoordinator`. |
 | `Pug.Sal.Data.Abstractions` | Store `IDataSession` (storage primitives only, D15), `LocalityKey`, `DatasetVersions.Next`. |
 | `Pug.Sal.Data.SQLite` / `.Postgres` | Dapper stores + `GetSchemaUpgradeScripts()`. Keep them in step. |
