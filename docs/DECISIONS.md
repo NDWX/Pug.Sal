@@ -132,6 +132,11 @@ publisher is used.
 - **No principal means refused.** Pug.Scheduling's coordinator lets an in-process call that has no
   principal skip the check; Sal deliberately does not. An in-process consumer must carry a
   principal, just as a remote one does.
+  - **An unauthenticated principal is refused the same way (user directive, 2026-10-14).**
+    Pug.Application.Security's OAuth accessor now returns an anonymous principal
+    (`Identity.IsAuthenticated` false, no identifier) rather than none. `CheckAuthorizationAsync`
+    refuses it with `NotAuthorized` before the authorization provider is asked, so a provider that
+    doesn't check authentication can't grant it anything.
 - **Endpoints** only require an authenticated caller and map `NotAuthorized` / `Unknown*Exception` /
   `ArgumentException` to 403/404/400. The facades decide. A host may add per-surface scopes and a
   policy in front of them (D23).

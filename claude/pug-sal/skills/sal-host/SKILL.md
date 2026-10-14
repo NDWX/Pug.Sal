@@ -104,15 +104,29 @@ The rest of this skill explains each piece.
 
 ## Security: `ISecurityManager` and permissions
 
-**Every operation is authorized, reads included (DECISIONS D8).** Each facade call asks `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync( context, operation, resource, purpose )`. If that's false, the call throws `NotAuthorized`, which becomes 403 over HTTP. **If `CurrentPrincipal` is null, the call is refused, never trusted.**
+**Every operation is authorized, reads included (DECISIONS D8).** Each facade call asks `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync( context, operation, resource, purpose )`. If that's false, the call throws `NotAuthorized`, which becomes 403 over HTTP. **A call whose `CurrentPrincipal` is null, or whose identity isn't authenticated (`Identity.IsAuthenticated` false), is refused with `NotAuthorized` before your authorization provider is asked.**
 
 - **The facades are singletons**, so `CurrentPrincipal` must resolve the *current* caller each time it is read. `SecurityManager` does this through `IPrincipalIdentityAccessor`. `AddOAuth20IdentityAccessor()` reads `HttpContext.User`, and needs `AddHttpContextAccessor()`.
 - **The caller's identifier** is `CurrentPrincipal.Identity.Identifier`. Sal records it as the actor on every write (`Registration`, `LastUpdate`, `ImportRun.Performed`, events), and the role provider looks the caller up by it.
   - **What the accessor uses:** when the token carries both a tenant ID (`tid`) and an object ID (`oid`), as Entra tokens do, the OAuth accessor treats it as an Entra token and uses the caller's **object ID**. It types the caller as an application when `oid` equals `sub` (an app-only token). Any other token is identified by `sub`, or by `client_id` when it has no subject of its own.
   - **Why it matters for Entra:** the object ID is what `AzureADRoleProvider` resolves in Graph, and it is the same across every application. Entra's `sub` is a per-application pairwise value, so Graph can't resolve it, and a user identified by it would get no roles.
-  - **Claim names:** the accessor reads both the short JWT claim names and the long names JwtBearer maps them to, so it works either way. The sample sets `MapInboundClaims = false` so every claim keeps its token name (`oid`, `tid`, `scp`, `roles`). **With mapping off, also set `TokenValidationParameters.RoleClaimType = "roles"`.** Otherwise ASP.NET looks for roles under its own long claim type, and every `RequireRole` policy fails. (With mapping on, `roles` is mapped to that long type and `RequireRole` works without it.)
-- **Unauthenticated callers get a principal, not null.** For a request without a valid token, or with no usable identifier, the accessor returns an anonymous identity (`IsAuthenticated` false, no identifier). It returns null only when there is no HTTP request at all. `Principal` never asks the role provider about an anonymous identity, but it still passes it to your `IAuthorizationProvider`. Over HTTP, the endpoints refuse such a caller with 401 before Sal is reached. In-process, though, Sal only refuses a *missing* principal, so your `IAuthorizationProvider` must refuse an unauthenticated one: [the reference provider](references/SalRoleAuthorization.cs) checks `IsAuthenticated` first.
+  - **Claim names:** see "JwtBearer claim mapping and roles" below.
+- **Unauthenticated callers get a principal, not null.** For a request without a valid token, or with no usable identifier, the accessor returns an anonymous identity (`IsAuthenticated` false, no identifier). It returns null only when there is no HTTP request at all.
+  - **Over HTTP:** the endpoints refuse such a caller with 401 before Sal is reached.
+  - **In-process:** Sal refuses it with `NotAuthorized` without consulting your provider.
+  - **In your provider:** `Pug.Application.Security`'s `Principal` passes anonymous identities to the `IAuthorizationProvider`, which other code than Sal may call. So refuse unauthenticated principals there too. [The reference provider](references/SalRoleAuthorization.cs) checks `IsAuthenticated` first.
 - **Work outside a request**, such as a scheduled import or a seeding job, has no `HttpContext`, and so no authenticated caller, and is refused. Run it under an explicit identity: give it an `ISecurityManager` whose `CurrentPrincipal` is a service principal holding just the operations it needs (`IMPORT`, `VIEW`). Don't make your request-path security manager fall back to "system".
+
+### JwtBearer claim mapping and roles
+
+JwtBearer's `MapInboundClaims` decides the names token claims arrive under, and that decides whether role-based policies work. Pick one setting and configure to match it:
+
+| `MapInboundClaims` | Claims arrive as | `RequireRole( "Sal.Admin" )` | Do this |
+|---|---|---|---|
+| `false` (the sample) | Their token names: `oid`, `tid`, `sub`, `scp`, `roles` | **Fails for everyone (403)** unless `TokenValidationParameters.RoleClaimType = "roles"` | Set `RoleClaimType = "roles"` |
+| `true` (the ASP.NET default) | Long URIs: `roles` becomes `ClaimTypes.Role`, `sub` becomes `ClaimTypes.NameIdentifier`, `oid`/`tid`/`scp` become `http://schemas.microsoft.com/identity/claims/…` | Works as is | Nothing extra. Write any claim-based checks of your own against the long names |
+
+The two Sal-side readers work either way. The OAuth accessor reads both the short and the long names of `sub`, `oid` and `tid`, and D23's scope check reads `scope`, `scp` and the long scope name. The setting only affects your own policies and claim checks. The trap is turning mapping off and forgetting `RoleClaimType`: authentication still succeeds, but every role-gated endpoint answers 403. This was verified with signed tokens through JwtBearer: 403 with mapping off and no `RoleClaimType`, 200 with it set, and 200 with mapping on.
 
 **Permissions.** Sal checks these operations (`Pug.Sal.Abstractions.SecurityOperations`), always against `ResourceQualifiers.AllCountries` (`{ Type = "COUNTRY" }`). There are no per-country grants for now (D8).
 
@@ -187,7 +201,7 @@ Details are in `sal-administration`.
 - [ ] All `Pug.Sal.*` packages are at one version.
 - [ ] The store is registered as a singleton, and the schema is migrated before the first request.
 - [ ] `ISecurityManager` resolves the current caller per call. The actor identifier is the caller's Entra object ID (check `Registration.Actor` after a test write). Background jobs run under an explicit principal.
-- [ ] JwtBearer has `MapInboundClaims = false` and `RoleClaimType = "roles"`, and a role-gated policy admits a caller who holds the role.
+- [ ] JwtBearer's claim mapping matches your policies (with `MapInboundClaims = false`, `RoleClaimType = "roles"` is set), and a role-gated endpoint admits a caller who holds the role.
 - [ ] The `IAuthorizationProvider` refuses an unauthenticated principal.
 - [ ] The `IAuthorizationProvider` maps every `SecurityOperations` value deliberately, `DELETE` and `IMPORT` included.
 - [ ] Endpoint scopes and policies match the provider's grants.

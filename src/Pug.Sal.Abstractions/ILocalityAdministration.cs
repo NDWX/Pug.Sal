@@ -14,7 +14,7 @@ namespace Pug.Sal.Abstractions
 	//
 	// Authorization: the reads require SecurityOperations.View, and each write requires the
 	// SecurityOperations value it names, all on ResourceQualifiers.AllCountries; NotAuthorized
-	// otherwise, and a call without a principal is refused.
+	// otherwise, and a call without an authenticated principal is refused.
 	//
 	// The reads behave as their ILocalityDirectory counterparts: country-scoped results carry the
 	// dataset version they were read at, and unless includeRetired is set, retired records are

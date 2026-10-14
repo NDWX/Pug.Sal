@@ -135,6 +135,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 
 		await Assert.ThrowsAsync<NotAuthorized>( () => call( Admin( SecurityManagers.Granting( all.Where( o => o != operation ).ToArray() ) ) ) );
 		await Assert.ThrowsAsync<NotAuthorized>( () => call( Admin( SecurityManagers.WithoutPrincipal() ) ) );
+		await Assert.ThrowsAsync<NotAuthorized>( () => call( Admin( SecurityManagers.Unauthenticated() ) ) );
 
 		Exception? passed = await Record.ExceptionAsync( () => call( Admin( SecurityManagers.Granting( operation ) ) ) );
 

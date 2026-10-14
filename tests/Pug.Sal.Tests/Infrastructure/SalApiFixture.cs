@@ -107,6 +107,7 @@ public class SalApiFixture : IAsyncLifetime
 
 		Mock<IPrincipalIdentity> identity = new();
 		identity.Setup( x => x.Identifier ).Returns( User );
+		identity.Setup( x => x.IsAuthenticated ).Returns( () => accessor.HttpContext?.User.Identity?.IsAuthenticated == true );
 
 		Mock<IPrincipal> principal = new();
 		principal.Setup( x => x.Identity ).Returns( identity.Object );

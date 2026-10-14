@@ -43,6 +43,7 @@ public class LocalityDirectoryTests : IClassFixture<AustraliaFixture>
 
 		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.Denied() ) ) );
 		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.WithoutPrincipal() ) ) );
+		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.Unauthenticated() ) ) );
 		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.Granting(
 			SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire,
 			SecurityOperations.Delete, SecurityOperations.Import ) ) ) );

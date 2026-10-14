@@ -25,10 +25,16 @@ internal static class SecurityManagers
 		return manager.Object;
 	}
 
-	private static ISecurityManager Create( string userId, Func<string, NounQualifier, bool> isAuthorized )
+	// A principal whose identity is not authenticated (what an identity accessor returns for an
+	// anonymous caller), granted every operation: Sal refuses it without asking.
+	internal static ISecurityManager Unauthenticated() =>
+		Create( string.Empty, ( _, _ ) => true, authenticated: false );
+
+	private static ISecurityManager Create( string userId, Func<string, NounQualifier, bool> isAuthorized, bool authenticated = true )
 	{
 		Mock<IPrincipalIdentity> identity = new();
 		identity.Setup( x => x.Identifier ).Returns( userId );
+		identity.Setup( x => x.IsAuthenticated ).Returns( authenticated );
 
 		Mock<IPrincipal> principal = new();
 		principal.Setup( x => x.Identity ).Returns( identity.Object );

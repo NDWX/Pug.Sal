@@ -10,7 +10,7 @@ namespace Pug.Sal
 	// argument normalization, and the reads both offer, over the store's full records. The
 	// directory projects those with ToInfo(); administration returns them as they are.
 	//
-	// Every read checks SecurityOperations.View first. A call without a principal is refused (D8).
+	// Every read checks SecurityOperations.View first. A call without an authenticated principal is refused (D8).
 	public abstract class LocalityServiceBase
 	{
 		// The most results SearchLocalitiesAsync returns, whatever limit the caller asks for.
@@ -32,12 +32,14 @@ namespace Pug.Sal
 		}
 
 		// Every check is against ResourceQualifiers.AllCountries (D8). Unlike Pug.Scheduling's
-		// coordinator, a missing principal is refused, never trusted.
+		// coordinator, a missing principal is refused, never trusted, and so is an unauthenticated one
+		// (identity accessors may return an anonymous principal rather than none): neither reaches the
+		// authorization provider.
 		protected async Task CheckAuthorizationAsync( string operation )
 		{
 			IPrincipal? principal = SecurityManager.CurrentPrincipal;
 
-			if( principal is null )
+			if( principal?.Identity is not { IsAuthenticated: true } )
 				throw new NotAuthorized();
 
 			bool isAuthorized = await principal.IsAuthorizedAsync(

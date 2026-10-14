@@ -114,4 +114,4 @@ The same exceptions are thrown in-process and over HTTP:
 | `UnknownSubdivisionException`, `UnknownLocalityException` | A single-record lookup found nothing. Listings and filters just return empty | 404 |
 | `ArgumentException` (including `ArgumentOutOfRangeException`) | Blank required input, empty search text, or `limit` < 1 | 400 |
 
-In-process, a call made where `ISecurityManager` has no current principal (a background thread outside a request) is refused with `NotAuthorized`. See `sal-host`.
+In-process, a call made where `ISecurityManager` has no current principal (a background thread outside a request), or only an unauthenticated one, is refused with `NotAuthorized`. See `sal-host`.
