@@ -19,7 +19,8 @@ namespace Pug.Sal.WebApi
 		/// D16, D20): full records, audit contexts included. Pass <c>app</c> to mount at the
 		/// application root, or a group from <c>app.MapGroup( "/prefix" )</c> to mount beneath a
 		/// further prefix.
-		/// Every endpoint requires an authenticated caller; administration itself authorizes. Reads
+		/// Every endpoint requires an authenticated caller and, when <paramref name="configure"/> sets
+		/// them, one of its scopes and its policy (D23); administration itself authorizes. Reads
 		/// carry an ETag as the directory's do. An import posts the dataset itself as the request
 		/// body (one of <see cref="ImportMediaTypes"/>), with the importer, source label and options
 		/// as query parameters.
@@ -28,8 +29,24 @@ namespace Pug.Sal.WebApi
 		/// <c>AddEndpointsApiExplorer()</c> with <c>AddSwaggerGen()</c>, or
 		/// <c>AddOpenApi()</c> with <c>MapOpenApi()</c>.
 		/// </summary>
-		public static IEndpointRouteBuilder MapSalAdministrationEndpoints( this IEndpointRouteBuilder routes )
+		/// <param name="routes">Where to map.</param>
+		/// <param name="configure">Sets the scopes and policy administration requires; null for none.</param>
+		public static IEndpointRouteBuilder MapSalAdministrationEndpoints( this IEndpointRouteBuilder routes,
+																		Action<SalApiAuthorization>? configure = null ) =>
+			routes.MapAdministrationEndpoints( SalAuthorization.Configure( configure ) );
+
+		internal static IEndpointRouteBuilder MapAdministrationEndpoints( this IEndpointRouteBuilder routes,
+																			SalApiAuthorization authorization )
 		{
+			Func<RouteHandlerBuilder, RouteHandlerBuilder> authorize = SalAuthorization.Conventions( authorization );
+
+			RouteHandlerBuilder Endpoint( RouteHandlerBuilder endpoint, string name, string summary ) =>
+				authorize( endpoint )
+					.WithName( name )
+					.WithTags( "Sal administration" )
+					.WithSummary( summary )
+					.Produces( StatusCodes.Status403Forbidden );
+
 			// == Reads ==
 
 			Endpoint( routes.MapGet( "sal/admin/countries", GetCountries ), "SalAdminGetCountries",
@@ -190,13 +207,6 @@ namespace Pug.Sal.WebApi
 			"option.subdivisionPrefix (prepended to subdivision values, e.g. AU-) and option.delimiter (one character, or tab). " +
 			"The dataset must cover the whole country: localities it does not hold are deleted. " +
 			"422 reports an unknown importer (UNKNOWN_IMPORTER) or an unreadable or invalid dataset (INVALID_DATASET, with Position).";
-
-		private static RouteHandlerBuilder Endpoint( RouteHandlerBuilder endpoint, string name, string summary ) =>
-			endpoint.RequireAuthorization()
-					.WithName( name )
-					.WithTags( "Sal administration" )
-					.WithSummary( summary )
-					.Produces( StatusCodes.Status403Forbidden );
 
 		private static IResult Versioned<T>( HttpContext context, Versioned<T> read ) =>
 			SalResults.Tagged( context, SalResults.VersionTag( read.DatasetVersion ), read );

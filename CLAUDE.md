@@ -30,7 +30,7 @@ tag-driven (`sal-v<X.Y.Z>`, `sal-pre-v<X.Y.Z>`, where X.Y.Z equals `<Version>` i
 | `Pug.Sal.Data.SQLite` / `.Postgres` | Dapper stores + `GetSchemaUpgradeScripts()`. Keep them in step. |
 | `Pug.Sal.Importers.Csv` | Generic column-mapped CSV importer. |
 | `Pug.Sal.WebApi.Models` | Every HTTP surface contract (`BadRequestResultInfo`, `FailureInfo`, `DatasetVersionResult`). No ASP.NET dependency. |
-| `Pug.Sal.WebApi` | `MapSalEndpoints()` = `MapSalDirectoryEndpoints()` (`sal/…`) + `MapSalAdministrationEndpoints()` (`sal/admin/…`), D20. Authenticates only; the facades authorize. ETag/304 on reads. |
+| `Pug.Sal.WebApi` | `MapSalEndpoints()` = `MapSalDirectoryEndpoints()` (`sal/…`) + `MapSalAdministrationEndpoints()` (`sal/admin/…`), D20. Authenticates, plus optional per-surface scopes and policy (D23); the facades authorize. ETag/304 on reads. |
 | `Pug.Sal.Client` | `LocalityDirectoryClient` and `LocalityAdministrationClient`, the interfaces over HTTP. Reproduces the service's exceptions. References Abstractions and WebApi.Models only. |
 | `Pug.Sal.DependencyInjection` | `AddSal`, `AddSalDatasetImporter<T>`, `AddSalChangePublisher<T>`. |
 

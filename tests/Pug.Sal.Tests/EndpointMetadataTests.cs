@@ -1,9 +1,7 @@
 using System.Net;
-using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.DependencyInjection;
 using Pug.Sal.Tests.Infrastructure;
 
 namespace Pug.Sal.Tests;
@@ -20,9 +18,7 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 	public EndpointMetadataTests( SalApiFixture fixture )
 	{
 		_fixture = fixture;
-		_endpoints = fixture.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
-							.Where( e => e.RoutePattern.RawText!.StartsWith( "sal/", StringComparison.Ordinal ) )
-							.ToArray();
+		_endpoints = EndpointRequests.SalEndpoints( fixture.Services );
 	}
 
 	// Endpoint name -> the statuses it declares.
@@ -92,20 +88,10 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 
 		foreach( RouteEndpoint endpoint in _endpoints )
 		{
-			string method = Assert.Single( endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods );
-			string path = endpoint.RoutePattern.RawText!.Replace( "{country}", "AU" ).Replace( "{subdivision}", "AU-NSW" ) +
-						"?name=Sydney&text=s&importer=csv";
-
-			using HttpRequestMessage request = new( new HttpMethod( method ), path );
-
-			// A body each endpoint accepts, so the refusal is authentication's, not content negotiation's.
-			if( endpoint.Metadata.GetMetadata<IAcceptsMetadata>() is { } accepts )
-				request.Content = new StringContent( accepts.ContentTypes.Contains( "application/json" ) ? "{}" : "locality\nA\n",
-													Encoding.UTF8, accepts.ContentTypes[ 0 ] );
-
+			using HttpRequestMessage request = EndpointRequests.For( endpoint );
 			using HttpResponseMessage response = await anonymous.SendAsync( request );
 
-			Assert.True( response.StatusCode == HttpStatusCode.Unauthorized, $"{method} {path} answered {response.StatusCode}" );
+			Assert.True( response.StatusCode == HttpStatusCode.Unauthorized, $"{request.Method} {request.RequestUri} answered {response.StatusCode}" );
 		}
 	}
 

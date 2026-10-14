@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -26,7 +27,7 @@ namespace Pug.Sal.Tests.Infrastructure;
 //
 // Seeded through the clients themselves: AU (^\d{4}$, postcode required) with AU-NSW, AU-ACT and
 // AU-VIC, and a CSV import of Sydney 2000, Environa 2620 (NSW), Hume 2620 (ACT), St Kilda 3182.
-public sealed class SalApiFixture : IAsyncLifetime
+public class SalApiFixture : IAsyncLifetime
 {
 	public const string Reader = "reader";
 
@@ -46,6 +47,11 @@ public sealed class SalApiFixture : IAsyncLifetime
 					.ConfigureWebHost( web => web.UseTestServer().ConfigureServices( ConfigureServices ).Configure( Configure ) )
 					.StartAsync();
 
+		await SeedAsync();
+	}
+
+	protected virtual async Task SeedAsync()
+	{
 		LocalityAdministrationClient admin = AdministrationClient( Admin );
 
 		await admin.CreateCountryAsync( new CountryDefinition
@@ -68,7 +74,7 @@ public sealed class SalApiFixture : IAsyncLifetime
 		await _database.DisposeAsync();
 	}
 
-	private void ConfigureServices( IServiceCollection services )
+	protected virtual void ConfigureServices( IServiceCollection services )
 	{
 		services.AddRouting();
 		services.AddHttpContextAccessor();
@@ -84,13 +90,15 @@ public sealed class SalApiFixture : IAsyncLifetime
 		services.AddSalDatasetImporter<CsvDatasetImporter>( CsvDatasetImporter.DefaultName );
 	}
 
-	private static void Configure( IApplicationBuilder app )
+	private void Configure( IApplicationBuilder app )
 	{
 		app.UseRouting();
 		app.UseAuthentication();
 		app.UseAuthorization();
-		app.UseEndpoints( endpoints => endpoints.MapSalEndpoints() );
+		app.UseEndpoints( MapEndpoints );
 	}
+
+	protected virtual void MapEndpoints( IEndpointRouteBuilder endpoints ) => endpoints.MapSalEndpoints();
 
 	// The principal of the current request, granted by its user name.
 	private static ISecurityManager CurrentRequestSecurity( IHttpContextAccessor accessor )
@@ -113,13 +121,17 @@ public sealed class SalApiFixture : IAsyncLifetime
 		return manager.Object;
 	}
 
-	// A raw client authenticated as user; null for an unauthenticated caller.
-	public HttpClient CreateClient( string? user )
+	// A raw client authenticated as user, holding claims (<type>=<value>); null for an
+	// unauthenticated caller.
+	public HttpClient CreateClient( string? user, params string[] claims )
 	{
 		HttpClient client = _host.GetTestClient();
 
 		if( user is not null )
 			client.DefaultRequestHeaders.Add( TestAuthenticationHandler.UserHeader, user );
+
+		foreach( string claim in claims )
+			client.DefaultRequestHeaders.Add( TestAuthenticationHandler.ClaimHeader, claim );
 
 		return client;
 	}

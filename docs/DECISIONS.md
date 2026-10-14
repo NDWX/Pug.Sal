@@ -133,7 +133,8 @@ publisher is used.
   principal skip the check; Sal deliberately does not. An in-process consumer must carry a
   principal, just as a remote one does.
 - **Endpoints** only require an authenticated caller and map `NotAuthorized` / `Unknown*Exception` /
-  `ArgumentException` to 403/404/400. The facades decide.
+  `ArgumentException` to 403/404/400. The facades decide. A host may add per-surface scopes and a
+  policy in front of them (D23).
 - **Operations** (`SecurityOperations`): `VIEW`, `CREATE`, `MODIFY`, `RETIRE`, `IMPORT`. They live
   in Abstractions, following the Scheduling precedent (D3 there).
 - **Resource: all countries only, for now (user directive).** Every check is made against
@@ -549,6 +550,7 @@ reads, and the two interfaces get their own implementations.
 - **Authentication.** Every endpoint calls `RequireAuthorization()` (authenticated caller, default
   policy), so an anonymous caller gets 401 and never reaches a facade. Authorization stays with the
   facades (D8). `EndpointMetadataTests` checks the metadata and an anonymous request to every route.
+  A host may require further scopes and a policy, separately per surface (D23).
 - **Failures** are mapped by `SalResults` and reversed by the client's `ApiFailures`:
   - 403 for `NotAuthorized`;
   - 400 with a `BadRequestResultInfo` for `ArgumentException`;
@@ -633,6 +635,30 @@ reads, and the two interfaces get their own implementations.
 - The unused custom `<License>` property was removed.
 - Packages already on nuget.org (`0.0.1-pre.202610100035`) keep the Apache licence they were
   published under. The next release carries the AGPL.
+
+## D23 — Per-surface scopes and policies on the endpoints (user directive, 2026-10-14)
+
+- **The host sets, separately for the directory (`sal/`) and administration (`sal/admin/`), OAuth
+  scopes, a policy name, or both** (the user chose "both" over scopes-only and policy-only):
+  `MapSalEndpoints( o => { o.Directory.Scopes = …; o.Administration.Policy = "…"; } )`.
+  `MapSalDirectoryEndpoints` and `MapSalAdministrationEndpoints` take an
+  `Action<SalApiAuthorization>` for the same settings. With no arguments, behaviour is unchanged.
+- **Scopes:** the caller needs any one of them.
+  - They are compared ordinally, as they appear in the token (for Entra, the short name in `scp`).
+  - They are read from the `scope` claim (RFC 9068), `scp` (Entra) and
+    `http://schemas.microsoft.com/identity/claims/scope` (`scp` after JwtBearer's inbound claim
+    mapping). Each value is space-separated, and repeated claims are all read.
+  - Sal checks them itself with a `RequireAssertion` policy, so the host registers nothing extra
+    and Sal still references no identity provider package.
+- **Policy:** the name of a policy the host registered. An unregistered name fails at request time.
+- **Everything combines with AND:** the default policy (an authenticated caller), the scopes and the
+  policy. An anonymous caller still gets 401. An authenticated one failing a scope or the policy
+  gets 403, which every endpoint already declares.
+- **An additional gate, not a replacement for D8.** The facades still authorize every operation.
+- **Validated when mapping:** an empty scope, a scope containing whitespace or a blank policy name
+  throws `ArgumentException`. Scopes are copied then, so changing the options later has no effect.
+- **Tests:** `EndpointAuthorizationTests` runs `SalApiFixture`'s host mapped with a directory scope
+  and an administration policy (`ScopedSalApiFixture`).
 
 ## Verification conventions
 
