@@ -717,6 +717,7 @@ instruction; the user chose to keep that work.)
 - **Skills plugin (D24), in three phases:**
   - **S1, overview and component skills.** DONE: `sal-development`, `sal-data-driver`,
     `sal-name-normalizer`, `sal-dataset-importer`, `sal-change-publisher`, and the version check.
-  - **S2, `sal-host`.** Pending.
+  - **S2, `sal-host`.** DONE (with a role-to-operation `IAuthorizationProvider` reference; the
+    host sample compiles against Pug.Application.Security 3.1.0).
   - **S3, `sal-directory` and `sal-administration`.** Pending.
   - The marketplace entry is added once S3 is done.
