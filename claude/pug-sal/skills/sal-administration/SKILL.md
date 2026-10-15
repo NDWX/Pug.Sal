@@ -81,7 +81,7 @@ The same exceptions are thrown in-process and over HTTP:
 
 | Exception | When | HTTP |
 |---|---|---|
-| `NotAuthorized` | Missing permission, or a failed host scope or policy | 403 |
+| `AccessDeniedException` (an `UnauthorizedAccessException`; `Operation` names the refused permission in-process) | Missing permission, or a failed host scope or policy | 403 |
 | `AuthenticationException` | No or invalid credentials (HTTP only) | 401 |
 | `UnknownCountryException` / `UnknownSubdivisionException` / `UnknownLocalityException` | The record addressed doesn't exist | 404 |
 | `DuplicateEntryException` | The code or key already exists, retired or not. Reinstate it instead | 409 |

@@ -88,6 +88,17 @@ public class SalApiFixture : IAsyncLifetime
 		services.AddSalChangePublisher<RecordingEventPublisher>();
 		services.AddSal();
 		services.AddSalDatasetImporter<CsvDatasetImporter>( CsvDatasetImporter.DefaultName );
+		services.AddSalDatasetImporter<OsAccessDeniedImporter>( OsAccessDeniedImporter.Name );
+	}
+
+	// Fails as reading a dataset file the server may not open would: with the operating system's
+	// UnauthorizedAccessException, a server fault that must not reach the caller as a refusal.
+	private sealed class OsAccessDeniedImporter : IDatasetImporter
+	{
+		public const string Name = "os-denied";
+
+		public IAsyncEnumerable<ImportRow> ReadAsync( string country, Stream source, IDictionary<string, string> options ) =>
+			throw new UnauthorizedAccessException( "Access to the path '/var/sal/dataset.csv' is denied." );
 	}
 
 	private void Configure( IApplicationBuilder app )

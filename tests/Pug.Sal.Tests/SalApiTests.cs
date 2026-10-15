@@ -110,9 +110,30 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 
 		Assert.Equal( HttpStatusCode.Unauthorized, anonymous.StatusCode );
 		await Assert.ThrowsAsync<AuthenticationException>( () => _fixture.DirectoryClient( null ).GetCountriesAsync() );
-		await Assert.ThrowsAsync<NotAuthorized>( () => _fixture.DirectoryClient( "nobody" ).GetCountriesAsync() );
-		await Assert.ThrowsAsync<NotAuthorized>( () => _fixture.AdministrationClient( SalApiFixture.Reader ).RetireCountryAsync( "AU" ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => _fixture.DirectoryClient( "nobody" ).GetCountriesAsync() );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => _fixture.AdministrationClient( SalApiFixture.Reader ).RetireCountryAsync( "AU" ) );
 		Assert.Equal( "seed", Assert.Single( await _fixture.AdministrationClient( SalApiFixture.Admin ).GetImportRunsAsync( "AU" ) ).Source );
+	}
+
+	// Only AccessDeniedException is a refusal (403). An operating-system UnauthorizedAccessException
+	// is a server fault: it is not mapped, so the caller never sees it as a refusal (D25).
+	[Fact]
+	public async Task AnOperatingSystemAccessFailureIsNotARefusal()
+	{
+		HttpStatusCode? status = null;
+
+		Exception? thrown = await Record.ExceptionAsync( async () =>
+		{
+			using HttpResponseMessage response = await _fixture.CreateClient( SalApiFixture.Admin ).PostAsync(
+				"sal/admin/countries/AU/imports?importer=os-denied",
+				new ByteArrayContent( new byte[] { 1 } ) { Headers = { ContentType = new( "application/octet-stream" ) } } );
+
+			status = response.StatusCode;
+		} );
+
+		Assert.NotEqual( HttpStatusCode.Forbidden, status );
+		Assert.True( status == HttpStatusCode.InternalServerError || thrown is UnauthorizedAccessException and not AccessDeniedException,
+					$"status {status}, thrown {thrown?.GetType().Name}" );
 	}
 
 	[Fact]

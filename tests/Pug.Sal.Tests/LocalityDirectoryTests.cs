@@ -41,20 +41,34 @@ public class LocalityDirectoryTests : IClassFixture<AustraliaFixture>
 	{
 		_ = operation;
 
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.Denied() ) ) );
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.WithoutPrincipal() ) ) );
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.Unauthenticated() ) ) );
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( _fixture.CreateDirectory( SecurityManagers.Granting(
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( _fixture.CreateDirectory( SecurityManagers.Denied() ) ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( _fixture.CreateDirectory( SecurityManagers.WithoutPrincipal() ) ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( _fixture.CreateDirectory( SecurityManagers.Unauthenticated() ) ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( _fixture.CreateDirectory( SecurityManagers.Granting(
 			SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire,
 			SecurityOperations.Delete, SecurityOperations.Import ) ) ) );
 
 		await call( _fixture.CreateDirectory( SecurityManagers.Granting( SecurityOperations.View ) ) );
 	}
 
+	// The refusal names the operation, and is an UnauthorizedAccessException to code catching that.
+	[Fact]
+	public async Task ARefusalNamesTheOperation()
+	{
+		AccessDeniedException denied = await Assert.ThrowsAsync<AccessDeniedException>(
+			() => _fixture.CreateDirectory( SecurityManagers.Denied() ).GetCountriesAsync() );
+		AccessDeniedException anonymous = await Assert.ThrowsAsync<AccessDeniedException>(
+			() => _fixture.CreateDirectory( SecurityManagers.Unauthenticated() ).GetCountriesAsync() );
+
+		Assert.Equal( SecurityOperations.View, denied.Operation );
+		Assert.Equal( SecurityOperations.View, anonymous.Operation );
+		Assert.IsAssignableFrom<UnauthorizedAccessException>( denied );
+	}
+
 	[Fact]
 	public async Task AuthorizationIsCheckedBeforeTheCountryIsLookedUp()
 	{
-		await Assert.ThrowsAsync<NotAuthorized>( () => _fixture.CreateDirectory( SecurityManagers.Denied() ).GetCountryAsync( "ZZ" ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => _fixture.CreateDirectory( SecurityManagers.Denied() ).GetCountryAsync( "ZZ" ) );
 	}
 
 	// == Countries ==

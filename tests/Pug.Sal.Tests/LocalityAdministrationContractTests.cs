@@ -133,13 +133,13 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		string[] all = { SecurityOperations.View, SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire,
 						SecurityOperations.Delete, SecurityOperations.Import };
 
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( Admin( SecurityManagers.Granting( all.Where( o => o != operation ).ToArray() ) ) ) );
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( Admin( SecurityManagers.WithoutPrincipal() ) ) );
-		await Assert.ThrowsAsync<NotAuthorized>( () => call( Admin( SecurityManagers.Unauthenticated() ) ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( Admin( SecurityManagers.Granting( all.Where( o => o != operation ).ToArray() ) ) ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( Admin( SecurityManagers.WithoutPrincipal() ) ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => call( Admin( SecurityManagers.Unauthenticated() ) ) );
 
 		Exception? passed = await Record.ExceptionAsync( () => call( Admin( SecurityManagers.Granting( operation ) ) ) );
 
-		Assert.False( passed is NotAuthorized );
+		Assert.False( passed is AccessDeniedException );
 	}
 
 	// == Countries ==

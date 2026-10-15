@@ -12,8 +12,8 @@ namespace Pug.Sal.Abstractions
 	// (Registration, LastUpdate); ILocalityAdministration's reads return the full records.
 	//
 	// Authorization: every operation requires a principal holding SecurityOperations.View on
-	// ResourceQualifiers.AllCountries; NotAuthorized otherwise, and a call without an authenticated principal is
-	// refused.
+	// ResourceQualifiers.AllCountries; AccessDeniedException otherwise, and a call without an
+	// authenticated principal is refused.
 	//
 	// Country-scoped results carry the dataset version they were read at, so a client may cache
 	// them and revalidate with GetCountryVersionsAsync. Unless includeRetired is set, retired

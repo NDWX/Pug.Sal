@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Http;
-using Pug.Application.Security;
 using Pug.Sal.Abstractions;
 using Pug.Sal.WebApi.Models;
 
@@ -10,7 +9,8 @@ namespace Pug.Sal.WebApi
 {
 	// Turns facade outcomes into HTTP results. The facades authorize and validate; the endpoints
 	// only translate (DECISIONS D8):
-	// - NotAuthorized -> 403;
+	// - AccessDeniedException -> 403 (only that type: any other UnauthorizedAccessException is a
+	//   server fault, D25);
 	// - Unknown{Country,Subdivision,Locality}Exception -> 404 with a FailureInfo;
 	// - DuplicateEntryException -> 409 with a FailureInfo;
 	// - UnknownDatasetImporterException, DatasetImportException -> 422 with a FailureInfo;
@@ -23,7 +23,7 @@ namespace Pug.Sal.WebApi
 			{
 				return success( await call().ConfigureAwait( false ) );
 			}
-			catch( NotAuthorized )
+			catch( AccessDeniedException )
 			{
 				return Results.Forbid();
 			}

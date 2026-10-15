@@ -1,6 +1,5 @@
 using System.Net;
 using System.Text.Json;
-using Pug.Application.Security;
 using Pug.HttpApiClient;
 using Pug.Sal.Abstractions;
 using Pug.Sal.WebApi.Models;
@@ -8,7 +7,7 @@ using Pug.Sal.WebApi.Models;
 namespace Pug.Sal.Client
 {
 	// Turns the transport's failures back into the exceptions the Sal facades document, so a caller
-	// cannot tell the HTTP clients from the in-process facades: 403 -> NotAuthorized; 404, 409 and
+	// cannot tell the HTTP clients from the in-process facades: 403 -> AccessDeniedException (without an Operation: a 403 carries no body); 404, 409 and
 	// 422 -> the exception their FailureInfo body names; 400 -> ArgumentException rebuilt from the
 	// BadRequestResultInfo body. 401 is left as the transport's AuthenticationException: no facade
 	// contract covers "you did not authenticate". A failure without a recognizable body is rethrown
@@ -25,7 +24,7 @@ namespace Pug.Sal.Client
 			}
 			catch( AuthorizationException )
 			{
-				throw new NotAuthorized();
+				throw new AccessDeniedException();
 			}
 			catch( HttpApiRequestException exception ) when( Translate( exception ) is { } translated )
 			{

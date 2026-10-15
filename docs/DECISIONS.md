@@ -135,9 +135,9 @@ publisher is used.
   - **An unauthenticated principal is refused the same way (user directive, 2026-10-14).**
     Pug.Application.Security's OAuth accessor now returns an anonymous principal
     (`Identity.IsAuthenticated` false, no identifier) rather than none. `CheckAuthorizationAsync`
-    refuses it with `NotAuthorized` before the authorization provider is asked, so a provider that
+    refuses it with `AccessDeniedException` (D25) before the authorization provider is asked, so a provider that
     doesn't check authentication can't grant it anything.
-- **Endpoints** only require an authenticated caller and map `NotAuthorized` / `Unknown*Exception` /
+- **Endpoints** only require an authenticated caller and map `AccessDeniedException` (D25) / `Unknown*Exception` /
   `ArgumentException` to 403/404/400. The facades decide. A host may add per-surface scopes and a
   policy in front of them (D23).
 - **Operations** (`SecurityOperations`): `VIEW`, `CREATE`, `MODIFY`, `RETIRE`, `IMPORT`. They live
@@ -557,7 +557,7 @@ reads, and the two interfaces get their own implementations.
   facades (D8). `EndpointMetadataTests` checks the metadata and an anonymous request to every route.
   A host may require further scopes and a policy, separately per surface (D23).
 - **Failures** are mapped by `SalResults` and reversed by the client's `ApiFailures`:
-  - 403 for `NotAuthorized`;
+  - 403 for `AccessDeniedException` (D25, formerly `NotAuthorized`);
   - 400 with a `BadRequestResultInfo` for `ArgumentException`;
   - 404 with a `FailureInfo` for an unknown country, subdivision or locality;
   - 409 with a `FailureInfo` for a duplicate;
@@ -692,6 +692,29 @@ reads, and the two interfaces get their own implementations.
     surface used by service callers needs a host `Policy`. `sal-host` and `sal-directory` say so.
   - The contract test suites aren't packaged, so an out-of-repo driver links their sources from a
     checkout at the matching tag.
+
+## D25 — Sal's own refusal exception, `AccessDeniedException` (user directive, 2026-10-15)
+
+- **Why:** Pug.Application.Security 3.1.1 marks `NotAuthorized` obsolete with no replacement,
+  because none of its own code throws it. Refusing a call is therefore the calling library's
+  contract. Against 3.1.1, Sal's `-warnaserror` build failed with CS0618 at 4 sites in `src` and 11
+  in `tests`.
+- **The type:** `Pug.Sal.Abstractions.AccessDeniedException`, beside Sal's other domain exceptions.
+  - It is thrown for a missing principal, an unauthenticated one, or one lacking the operation.
+  - `Operation` names the refused `SecurityOperations` value in-process. It is null from the HTTP
+    client, because a 403 carries no body, whether it comes from a facade or the host's scope or
+    policy gate (D23).
+  - The name says 403 ("access denied") without the 401 sense of "unauthorized".
+- **It derives from `UnauthorizedAccessException`,** so code catching that still sees refusals.
+  Sal throws and maps **only** `AccessDeniedException`: `SalResults` turns it into 403, and
+  `ApiFailures` turns every 403 (Pug.HttpApiClient's `AuthorizationException`) back into it. An
+  operating-system `UnauthorizedAccessException`, such as a file the server may not open, is a
+  server fault and stays unmapped, so a caller never mistakes it for a refusal.
+  `AnOperatingSystemAccessFailureIsNotARefusal` pins this, and it fails if the base type is
+  mapped.
+- **A breaking change to the public contract** (callers catching `NotAuthorized` must switch),
+  accepted at 0.0.1-pre. Sal no longer uses `NotAuthorized` anywhere, so moving to Abstractions
+  3.1.1 or later is warning-free. Sal stays on 3.1.0 until 3.1.1 is on nuget.org.
 
 ## Verification conventions
 

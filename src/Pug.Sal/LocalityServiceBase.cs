@@ -40,7 +40,7 @@ namespace Pug.Sal
 			IPrincipal? principal = SecurityManager.CurrentPrincipal;
 
 			if( principal?.Identity is not { IsAuthenticated: true } )
-				throw new NotAuthorized();
+				throw new AccessDeniedException( operation );
 
 			bool isAuthorized = await principal.IsAuthorizedAsync(
 												new Dictionary<string, string>( 0 ),
@@ -51,7 +51,7 @@ namespace Pug.Sal
 											.ConfigureAwait( false );
 
 			if( !isAuthorized )
-				throw new NotAuthorized();
+				throw new AccessDeniedException( operation );
 		}
 
 		// Country codes are ISO 3166-1 alpha-2, held upper case: input is trimmed and upper-cased.

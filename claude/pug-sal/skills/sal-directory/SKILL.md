@@ -108,10 +108,10 @@ The same exceptions are thrown in-process and over HTTP:
 
 | Exception | When | HTTP |
 |---|---|---|
-| `Pug.Application.Security.NotAuthorized` | The caller lacks `VIEW` (or fails the host's scope or policy) | 403 |
+| `Pug.Sal.Abstractions.AccessDeniedException` | The caller lacks `VIEW` (or fails the host's scope or policy). In-process, `Operation` names the refused permission. Over HTTP it is null | 403 |
 | `System.Security.Authentication.AuthenticationException` | No or invalid credentials. HTTP only | 401 |
 | `UnknownCountryException` | The country doesn't exist (validation included) | 404 |
 | `UnknownSubdivisionException`, `UnknownLocalityException` | A single-record lookup found nothing. Listings and filters just return empty | 404 |
 | `ArgumentException` (including `ArgumentOutOfRangeException`) | Blank required input, empty search text, or `limit` < 1 | 400 |
 
-In-process, a call made where `ISecurityManager` has no current principal (a background thread outside a request), or only an unauthenticated one, is refused with `NotAuthorized`. See `sal-host`.
+In-process, a call made where `ISecurityManager` has no current principal (a background thread outside a request), or only an unauthenticated one, is refused with `AccessDeniedException`. See `sal-host`.

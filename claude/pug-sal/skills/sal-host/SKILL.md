@@ -104,7 +104,7 @@ The rest of this skill explains each piece.
 
 ## Security: `ISecurityManager` and permissions
 
-**Every operation is authorized, reads included (DECISIONS D8).** Each facade call asks `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync( context, operation, resource, purpose )`. If that's false, the call throws `NotAuthorized`, which becomes 403 over HTTP. **A call whose `CurrentPrincipal` is null, or whose identity isn't authenticated (`Identity.IsAuthenticated` false), is refused with `NotAuthorized` before your authorization provider is asked.**
+**Every operation is authorized, reads included (DECISIONS D8).** Each facade call asks `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync( context, operation, resource, purpose )`. If that's false, the call throws `Pug.Sal.Abstractions.AccessDeniedException`, which becomes 403 over HTTP. **A call whose `CurrentPrincipal` is null, or whose identity isn't authenticated (`Identity.IsAuthenticated` false), is refused with `AccessDeniedException` before your authorization provider is asked.**
 
 - **The facades are singletons**, so `CurrentPrincipal` must resolve the *current* caller each time it is read. `SecurityManager` does this through `IPrincipalIdentityAccessor`. `AddOAuth20IdentityAccessor()` reads `HttpContext.User`, and needs `AddHttpContextAccessor()`.
 - **The caller's identifier** is `CurrentPrincipal.Identity.Identifier`. Sal records it as the actor on every write (`Registration`, `LastUpdate`, `ImportRun.Performed`, events), and the role provider looks the caller up by it.
@@ -113,7 +113,7 @@ The rest of this skill explains each piece.
   - **Claim names:** see "JwtBearer claim mapping and roles" below.
 - **Unauthenticated callers get a principal, not null.** For a request without a valid token, or with no usable identifier, the accessor returns an anonymous identity (`IsAuthenticated` false, no identifier). It returns null only when there is no HTTP request at all.
   - **Over HTTP:** the endpoints refuse such a caller with 401 before Sal is reached.
-  - **In-process:** Sal refuses it with `NotAuthorized` without consulting your provider.
+  - **In-process:** Sal refuses it with `AccessDeniedException` without consulting your provider.
   - **In your provider:** `Pug.Application.Security`'s `Principal` passes anonymous identities to the `IAuthorizationProvider`, which other code than Sal may call. So refuse unauthenticated principals there too. [The reference provider](references/SalRoleAuthorization.cs) checks `IsAuthenticated` first.
 - **Work outside a request**, such as a scheduled import or a seeding job, has no `HttpContext`, and so no authenticated caller, and is refused. Run it under an explicit identity: give it an `ISecurityManager` whose `CurrentPrincipal` is a service principal holding just the operations it needs (`IMPORT`, `VIEW`). Don't make your request-path security manager fall back to "system".
 

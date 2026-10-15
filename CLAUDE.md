@@ -49,6 +49,9 @@ update the skill in the same commit.
   - Facades check through `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync`.
   - A missing or unauthenticated principal (`Identity.IsAuthenticated` false) is refused, never
     trusted (unlike Pug.Scheduling's coordinator), before the authorization provider is asked.
+  - A refusal is `Pug.Sal.Abstractions.AccessDeniedException` (D25), never Pug.Application.Security's
+    obsolete `NotAuthorized`. Only that type maps to 403: an OS `UnauthorizedAccessException` stays a
+    server fault.
   - Every check is against `ResourceQualifiers.AllCountries` only.
   - Country-specific permissions are deferred. If they return, the host's provider resolves them
     (DECISIONS D8).

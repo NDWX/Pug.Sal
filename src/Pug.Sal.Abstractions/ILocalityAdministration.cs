@@ -13,7 +13,7 @@ namespace Pug.Sal.Abstractions
 	// Pug.Sal.Client's LocalityAdministrationClient (DECISIONS D16).
 	//
 	// Authorization: the reads require SecurityOperations.View, and each write requires the
-	// SecurityOperations value it names, all on ResourceQualifiers.AllCountries; NotAuthorized
+	// SecurityOperations value it names, all on ResourceQualifiers.AllCountries; AccessDeniedException
 	// otherwise, and a call without an authenticated principal is refused.
 	//
 	// The reads behave as their ILocalityDirectory counterparts: country-scoped results carry the
