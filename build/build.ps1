@@ -182,6 +182,52 @@ function Resolve-BuildIdentity
 	}
 }
 
+# A release (not pre-release) version may be on nuget.org already only from this same commit, as when
+# a release is re-run (DECISIONS D26). The push skips duplicates, so a sal-v tag moved to another
+# commit would otherwise "release" new binaries on GitHub while nuget.org keeps the old ones. Every
+# project under src is packable, under its project name as package id, and its nuspec records the
+# commit it was packed from.
+function Assert-VersionUnpublished
+{
+	param( [Parameter( Mandatory )] [string] $Version )
+
+	$commit = Invoke-Native -FilePath 'git' -Arguments @( '-C', $script:RepoRoot, 'rev-parse', 'HEAD' ) -Capture
+
+	$conflicts = foreach( $project in Get-ChildItem -File -Path ( Join-Path $script:RepoRoot 'src' ) -Filter '*.csproj' -Recurse )
+	{
+		$id = $project.BaseName.ToLowerInvariant()
+		$index = Invoke-WebRequest -Uri "https://api.nuget.org/v3-flatcontainer/$id/index.json" -SkipHttpErrorCheck
+
+		if( $index.StatusCode -eq 404 )
+		{
+			continue
+		}
+
+		if( $index.StatusCode -ne 200 )
+		{
+			throw "nuget.org answered $( $index.StatusCode ) for $( $project.BaseName )"
+		}
+
+		if( ( $index.Content | ConvertFrom-Json ).versions -notcontains $Version )
+		{
+			continue
+		}
+
+		[xml] $nuspec = ( Invoke-WebRequest -Uri "https://api.nuget.org/v3-flatcontainer/$id/$Version/$id.nuspec" ).Content
+		$published = $nuspec.package.metadata.repository.commit
+
+		if( $published -ne $commit )
+		{
+			"$( $project.BaseName ) (from $( $published ? $published : 'an unknown commit' ))"
+		}
+	}
+
+	if( $conflicts )
+	{
+		throw "version $Version is already on nuget.org from another commit: $( @( $conflicts ) -join ', ' ); bump <Version> instead of moving a release tag (RELEASING.md)"
+	}
+}
+
 function Get-Packages
 {
 	return @( Get-ChildItem -File -Path $dist -Filter '*.nupkg' -ErrorAction SilentlyContinue | Sort-Object Name )
@@ -260,7 +306,14 @@ switch( $Stage )
 	'identify'
 	{
 		Assert-PluginVersion
-		Write-StageOutputs ( Resolve-BuildIdentity -Ref $Ref )
+		$identity = Resolve-BuildIdentity -Ref $Ref
+
+		if( $identity.release -and -not $identity.prerelease )
+		{
+			Assert-VersionUnpublished -Version $identity.version
+		}
+
+		Write-StageOutputs $identity
 	}
 
 	# The completion gate (CLAUDE.md): the plugin and package versions agree, the solution builds

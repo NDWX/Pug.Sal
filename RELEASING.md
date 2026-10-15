@@ -1,6 +1,7 @@
 # Releasing
 
-Every Pug.Sal package shares one version: `<Version>` in `Directory.Build.props`. You start a release
+Every Pug.Sal package shares one version: `<Version>` in `Directory.Build.props` (DECISIONS D26, to be
+decided again before 1.0). You start a release
 by pushing a tag. The release workflow then:
 
 1. runs the completion gate, the same as CI;
@@ -26,6 +27,9 @@ by pushing a tag. The release workflow then:
 
 - **Version check.** The tag's `X.Y.Z` must equal `<Version>`, or the workflow fails before it
   builds anything. Bump `<Version>` in a commit, then tag that commit.
+- **A release version is published once.** A `sal-v` tag fails before it builds anything when
+  its version is already on nuget.org from a different commit, as when the tag was moved. Bump
+  `<Version>` instead. Moving a `sal-pre-v` tag is fine, since each build gets a new stamp.
 - **Pre-release ordering.** Tagging the same `X.Y.Z` again with `-pre-` gives a newer stamp. So
   pre-releases sort in build order, and before the final `X.Y.Z`.
 - **Publishing runs only after the gate passes.** The push to nuget.org waits for the tests. It runs
@@ -65,6 +69,8 @@ them (DECISIONS D24). **Every package version bump also bumps the plugin's versi
    `build.ps1`'s `identify` and `test` stages fail when the two versions differ, so CI catches a
    missed bump and a release tag cannot publish one.
 2. Tag the commit as usual.
+   Once package validation is on (from the first stable release, D26), a stable bump also sets
+   `PackageValidationBaselineVersion` in `Directory.Build.props` to the previous stable version.
 3. After the release, update the plugin's entry in the `pug-claude-plugins` marketplace
    (`NDWX/claude-code-plugins`, `.claude-plugin/marketplace.json`). Set its `version` to `X.Y.Z` and
    its source `ref` to the new tag, so users get the skills that match the packages:

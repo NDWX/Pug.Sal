@@ -608,7 +608,8 @@ reads, and the two interfaces get their own implementations.
   `workflow_call`.
 - **Tag-driven releases:**
   - `sal-v<X.Y.Z>` builds `X.Y.Z`. `sal-pre-v<X.Y.Z>` builds `X.Y.Z-pre.<UTC stamp>`.
-  - X.Y.Z must equal the single `<Version>` in `Directory.Build.props`. That replaces the old fixed
+  - X.Y.Z must equal the single `<Version>` in `Directory.Build.props` (shared by every package,
+    D26). That replaces the old fixed
     `PackageVersion`/`AssemblyVersion`/`FileVersion`, which made `-p:Version` ineffective.
   - A tag push publishes to nuget.org: the `nuget` job, in the `release` environment. It then
     creates a draft GitHub release with the packages and `SHA256SUMS`.
@@ -716,6 +717,39 @@ reads, and the two interfaces get their own implementations.
   accepted at 0.0.1-pre. Sal no longer uses `NotAuthorized` anywhere, so moving to Abstractions
   3.1.1 or later is warning-free. Sal references Abstractions 3.1.1 since its release on nuget.org
   (2026-10-15).
+
+## D26 — One shared package version until 1.0 (user decision, 2026-10-15)
+
+- **Decision:** all 11 packages share `<Version>` in `Directory.Build.props`, and a release is one
+  `sal-v` / `sal-pre-v` tag. **Provisional:** decide again before the first stable `1.0.0`.
+- **Provenance:** the shared version was an unrecorded default, from the Phase 0 skeleton and D21,
+  never put to the user. It was raised on 2026-10-15, when Pug.Application.Security moved to
+  independent package versions with the version bump as the release signal (a release plan
+  comparing each csproj with nuget.org, a check for a forgotten bump, a dependency-closure rule,
+  and a tag per package created by the release).
+- **Why shared, for now:**
+  - Client and server are meant to match (`sal-directory`). `WebApi.Models` has no contract version
+    of its own, so independent versions would need compatibility rules first.
+  - Before 1.0, changes cross packages: D25 alone touched Abstractions, Sal, WebApi and Client.
+  - The plugin lockstep (D24) stays one number and one tag for the marketplace to pin.
+  - Independent versions need the release-plan machinery above. One version cannot publish a
+    package against an unreleased in-repo dependency, and one tag stays clear of GitHub's limit of
+    three tags per push for triggering workflows.
+- **Cost:** a package with no changes still gets a new version each release.
+- **At 1.0, look first at:** `Pug.Sal.Data.Abstractions` (what third-party drivers build against)
+  and the client contract (`WebApi.Models`, `Client`). These may want to stay stable while the
+  server changes.
+- **Borrowed from Pug.Application.Security:**
+  - **A stable version is published once.** `identify` fails a `sal-v` tag whose version is
+    already on nuget.org from another commit. It reads the commit from the published nuspec's
+    `repository` element. The push skips duplicates, so a moved stable tag would otherwise
+    publish new binaries to the GitHub release while nuget.org keeps the old ones. The same
+    commit passes, so re-running a release still works. `sal-pre-v` tags are exempt: the stamp
+    makes each pre-release version unique.
+  - **Package validation, from the first stable release.** Set `EnablePackageValidation` and
+    `PackageValidationBaselineVersion` (the previous stable version) in `Directory.Build.props`,
+    so `dotnet pack` fails on an API break the version does not admit. It is not on yet, because
+    there is no stable baseline, and breaking changes are expected before then (D25).
 
 ## Verification conventions
 

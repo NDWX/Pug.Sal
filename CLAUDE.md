@@ -17,7 +17,8 @@ sg docker -c "dotnet test tests/Pug.Sal.Postgres.Tests -m:1"   # Postgres via Te
 The same gate as one command, which CI runs on every branch push:
 `pwsh build/build.ps1 -Stage test -DockerViaSg` (`-DockerViaSg` locally only). Releases are
 tag-driven (`sal-v<X.Y.Z>`, `sal-pre-v<X.Y.Z>`, where X.Y.Z equals `<Version>` in
-`Directory.Build.props`). The workflows only call `build/build.ps1`; see `RELEASING.md`.
+`Directory.Build.props`, one version shared by every package until 1.0, D26). The workflows
+only call `build/build.ps1`; see `RELEASING.md`.
 
 **Bumping `<Version>` also bumps the `pug-sal` Claude Code plugin's `version`**
 (`claude/pug-sal/.claude-plugin/plugin.json`), in the same commit (D24); the build fails when they
