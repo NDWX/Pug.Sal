@@ -714,7 +714,8 @@ reads, and the two interfaces get their own implementations.
   mapped.
 - **A breaking change to the public contract** (callers catching `NotAuthorized` must switch),
   accepted at 0.0.1-pre. Sal no longer uses `NotAuthorized` anywhere, so moving to Abstractions
-  3.1.1 or later is warning-free. Sal stays on 3.1.0 until 3.1.1 is on nuget.org.
+  3.1.1 or later is warning-free. Sal references Abstractions 3.1.1 since its release on nuget.org
+  (2026-10-15).
 
 ## Verification conventions
 
@@ -762,6 +763,7 @@ instruction; the user chose to keep that work.)
     - the `sal-host` sample compiles;
     - Sal, built against Abstractions 3.1.0, passes all 195 tests on 3.1.1.
 
-    The skill pins Security ≥ 3.1.1 and the accessor ≥ 3.2.0. The packages themselves weren't
-    restored, because the GitHub Packages feed needs a token.
+    The skill pins Security ≥ 3.1.1 and the accessor ≥ 3.2.0. **Re-verified 2026-10-15 against the
+    released nuget.org packages** (Security 3.1.1, accessor 3.2.0): the 12 JwtBearer tests pass, and
+    the `sal-host` sample compiles with `-warnaserror`. Sal now references Abstractions 3.1.1 (D25).
   - The marketplace entry is added once S3 is done.
