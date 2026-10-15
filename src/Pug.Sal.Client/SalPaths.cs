@@ -1,11 +1,22 @@
+using Pug.Sal.WebApi.Models;
+
 namespace Pug.Sal.Client
 {
-	// Paths and queries of the sal/ endpoints, as Pug.Sal.WebApi maps them.
+	// Paths and queries of the Sal endpoints, as Pug.Sal.WebApi maps them.
 	internal static class SalPaths
 	{
+		// What a surface's paths start with: its route prefix and a slash, or nothing for an empty
+		// prefix, so a path never starts with '/' (which would drop the base address's own path).
+		public static string Root( string routePrefix )
+		{
+			string prefix = SalRoutes.NormalizePrefix( routePrefix );
+
+			return prefix.Length == 0 ? prefix : prefix + "/";
+		}
+
 		public static string Escape( string value ) => Uri.EscapeDataString( value ?? string.Empty );
 
-		public static string Country( string root, string country ) => $"{root}/countries/{Escape( country )}";
+		public static string Country( string root, string country ) => $"{root}countries/{Escape( country )}";
 
 		// Pug.HttpApiClient 0.6.0 aggregates the query collection without a seed, so an empty (but
 		// non-null) dictionary throws where null is handled.

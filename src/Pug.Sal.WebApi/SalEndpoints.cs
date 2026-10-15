@@ -5,16 +5,17 @@ namespace Pug.Sal.WebApi
 	public static class SalEndpoints
 	{
 		/// <summary>
-		/// Maps the whole Sal surface: the directory under <c>sal/</c>
-		/// (<see cref="SalDirectoryEndpoints.MapSalDirectoryEndpoints"/>) and administration under
-		/// <c>sal/admin/</c> (<see cref="SalAdministrationEndpoints.MapSalAdministrationEndpoints"/>).
-		/// Pass <c>app</c> to mount at the application root, or a group from
+		/// Maps the whole Sal surface: the directory
+		/// (<see cref="SalDirectoryEndpoints.MapSalDirectoryEndpoints"/>) and administration
+		/// (<see cref="SalAdministrationEndpoints.MapSalAdministrationEndpoints"/>), under the route
+		/// prefixes <paramref name="configure"/> sets, <c>directory/</c> and <c>administration/</c> by
+		/// default (DECISIONS D20). Pass <c>app</c> to mount at the application root, or a group from
 		/// <c>app.MapGroup( "/prefix" )</c> to mount beneath a further prefix. A host exposing only
 		/// reads maps <c>MapSalDirectoryEndpoints()</c> alone.
 		/// All endpoints require an authenticated caller. <paramref name="configure"/> may add, for each
 		/// surface separately, OAuth scopes (any one of them required) and a host-registered
 		/// authorization policy (DECISIONS D23), e.g.
-		/// <c>o =&gt; { o.Directory.Scopes = new[] { "Directory.Read" }; o.Administration.Policy = "SalAdmin"; }</c>.
+		/// <c>o =&gt; { o.Directory.RoutePrefix = "sal"; o.Directory.Scopes = new[] { "Directory.Read" }; o.Administration.Policy = "SalAdmin"; }</c>.
 		/// A caller failing them gets 403. Authorization of each operation stays the facades'.
 		/// Each endpoint carries OpenAPI metadata (name, tag, summary, request and response types);
 		/// the host surfaces it, typically in development only, by configuring
@@ -22,7 +23,7 @@ namespace Pug.Sal.WebApi
 		/// <c>AddOpenApi()</c> with <c>MapOpenApi()</c>.
 		/// </summary>
 		/// <param name="routes">Where to map.</param>
-		/// <param name="configure">Sets each surface's scopes and policy; null for none.</param>
+		/// <param name="configure">Sets each surface's route prefix, scopes and policy; null for the defaults.</param>
 		public static IEndpointRouteBuilder MapSalEndpoints( this IEndpointRouteBuilder routes,
 															Action<SalEndpointOptions>? configure = null )
 		{

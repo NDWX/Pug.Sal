@@ -12,7 +12,8 @@ namespace Pug.Sal.Data.Abstractions
 	//   (could not serialize access due to concurrent update) instead of letting it proceed.
 	// - Reads run at RepeatableRead, so every statement of one read sees the same snapshot; a
 	//   read-only transaction never fails at that level.
-	// SQLite (with the session's own enlistment, D15) is serializable whatever the level.
+	// SQLite (with the session's own enlistment, D15) is serializable whatever the level; its store
+	// begins a read as a DEFERRED transaction and a write as IMMEDIATE, so reads take no write lock.
 	public static class UnitsOfWork
 	{
 		private static readonly TransactionOptions ReadOptions = new() { IsolationLevel = IsolationLevel.RepeatableRead };

@@ -18,6 +18,7 @@ using Pug.Sal.DependencyInjection;
 using Pug.Sal.Importers.Csv;
 using Pug.Sal.Models;
 using Pug.Sal.WebApi;
+using Pug.Sal.WebApi.Models;
 
 namespace Pug.Sal.Tests.Infrastructure;
 
@@ -151,9 +152,14 @@ public class SalApiFixture : IAsyncLifetime
 	public IHttpApiClient CreateApiClient( string? user ) =>
 		new HttpApiClient.HttpApiClient( new Uri( "http://localhost/" ), new ClientFactory( this, user ) );
 
-	public LocalityDirectoryClient DirectoryClient( string? user ) => new( CreateApiClient( user ) );
+	// Where MapEndpoints mounts each surface, for the clients.
+	protected virtual string DirectoryPrefix => SalRoutes.DefaultDirectoryPrefix;
 
-	public LocalityAdministrationClient AdministrationClient( string? user ) => new( CreateApiClient( user ) );
+	protected virtual string AdministrationPrefix => SalRoutes.DefaultAdministrationPrefix;
+
+	public LocalityDirectoryClient DirectoryClient( string? user ) => new( CreateApiClient( user ), DirectoryPrefix );
+
+	public LocalityAdministrationClient AdministrationClient( string? user ) => new( CreateApiClient( user ), AdministrationPrefix );
 
 	public RecordingEventPublisher EventPublisher => (RecordingEventPublisher)Services.GetRequiredService<ILocalityChangeEventPublisher>();
 

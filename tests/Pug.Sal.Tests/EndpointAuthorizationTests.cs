@@ -70,7 +70,7 @@ public class EndpointAuthorizationTests : IClassFixture<ScopedSalApiFixture>
 	[InlineData( "roles=sal.read", HttpStatusCode.Forbidden )]
 	public async Task TheDirectoryScopeIsReadFromTheScopeClaims( string claim, HttpStatusCode expected )
 	{
-		using HttpResponseMessage response = await _fixture.CreateClient( SalApiFixture.Reader, claim ).GetAsync( "sal/countries" );
+		using HttpResponseMessage response = await _fixture.CreateClient( SalApiFixture.Reader, claim ).GetAsync( "directory/countries" );
 
 		Assert.Equal( expected, response.StatusCode );
 	}
@@ -79,7 +79,7 @@ public class EndpointAuthorizationTests : IClassFixture<ScopedSalApiFixture>
 	public async Task TheDirectoryScopeAlsoAcceptsRepeatedScopeClaims()
 	{
 		using HttpResponseMessage response =
-			await _fixture.CreateClient( SalApiFixture.Reader, "scope=openid", "scope=sal.read" ).GetAsync( "sal/countries" );
+			await _fixture.CreateClient( SalApiFixture.Reader, "scope=openid", "scope=sal.read" ).GetAsync( "directory/countries" );
 
 		Assert.Equal( HttpStatusCode.OK, response.StatusCode );
 	}
@@ -88,7 +88,7 @@ public class EndpointAuthorizationTests : IClassFixture<ScopedSalApiFixture>
 	public async Task ThePolicyOpensAdministration()
 	{
 		using HttpResponseMessage response =
-			await _fixture.CreateClient( SalApiFixture.Admin, AdministrationRole ).GetAsync( "sal/admin/countries" );
+			await _fixture.CreateClient( SalApiFixture.Admin, AdministrationRole ).GetAsync( "administration/countries" );
 
 		Assert.Equal( HttpStatusCode.OK, response.StatusCode );
 	}
@@ -97,7 +97,7 @@ public class EndpointAuthorizationTests : IClassFixture<ScopedSalApiFixture>
 	public async Task TheFacadesStillAuthorizeBehindTheScope()
 	{
 		// "nobody" holds the scope but no Sal permission: the directory itself refuses.
-		using HttpResponseMessage response = await _fixture.CreateClient( "nobody", DirectoryScope ).GetAsync( "sal/countries" );
+		using HttpResponseMessage response = await _fixture.CreateClient( "nobody", DirectoryScope ).GetAsync( "directory/countries" );
 
 		Assert.Equal( HttpStatusCode.Forbidden, response.StatusCode );
 	}

@@ -1,29 +1,44 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
+using Pug.Sal.WebApi.Models;
 
 namespace Pug.Sal.WebApi
 {
 	/// <summary>
-	/// The host's authorization requirements for each Sal surface (DECISIONS D23), passed to
-	/// <see cref="SalEndpoints.MapSalEndpoints"/>.
+	/// The host's settings for each Sal surface, passed to <see cref="SalEndpoints.MapSalEndpoints"/>:
+	/// where it is mounted (DECISIONS D20) and what it requires (D23).
 	/// </summary>
 	public sealed class SalEndpointOptions
 	{
-		/// <summary>What the <c>sal/</c> directory endpoints require.</summary>
-		public SalApiAuthorization Directory { get; } = new();
+		/// <summary>The directory's settings; mounted under <c>directory/</c> unless changed.</summary>
+		public SalApiOptions Directory { get; } = new( SalRoutes.DefaultDirectoryPrefix );
 
-		/// <summary>What the <c>sal/admin/</c> administration endpoints require.</summary>
-		public SalApiAuthorization Administration { get; } = new();
+		/// <summary>Administration's settings; mounted under <c>administration/</c> unless changed.</summary>
+		public SalApiOptions Administration { get; } = new( SalRoutes.DefaultAdministrationPrefix );
 	}
 
 	/// <summary>
-	/// A surface's requirements beyond an authenticated caller (DECISIONS D23). Scopes and policy
-	/// combine: a caller must satisfy both when both are set. A caller who fails either gets 403. The
-	/// facades still authorize every operation (D8).
+	/// A surface's route prefix (DECISIONS D20) and its requirements beyond an authenticated caller
+	/// (D23). Scopes and policy combine: a caller must satisfy both when both are set. A caller who
+	/// fails either gets 403. The facades still authorize every operation (D8).
 	/// </summary>
-	public sealed class SalApiAuthorization
+	public sealed class SalApiOptions
 	{
+		internal SalApiOptions( string routePrefix )
+		{
+			RoutePrefix = routePrefix;
+		}
+
+		/// <summary>
+		/// Where the surface is mounted, relative to the route builder it is mapped on, e.g.
+		/// <c>"directory"</c> or <c>"api/sal/admin"</c>. Leading and trailing slashes are ignored, and
+		/// empty mounts it on the builder itself. Defaults to <see cref="SalRoutes.DefaultDirectoryPrefix"/>
+		/// or <see cref="SalRoutes.DefaultAdministrationPrefix"/>. Clients must be given the same prefix.
+		/// </summary>
+		public string RoutePrefix { get; set; }
+
 		/// <summary>
 		/// The caller must hold at least one of these OAuth scopes. They are compared ordinally, as
 		/// they appear in the access token, so for Entra the short name in <c>scp</c>, not the
@@ -48,18 +63,29 @@ namespace Pug.Sal.WebApi
 
 		private static readonly char[] ScopeSeparator = { ' ' };
 
-		internal static SalApiAuthorization Configure( Action<SalApiAuthorization>? configure )
+		internal static SalApiOptions Configure( string defaultPrefix, Action<SalApiOptions>? configure )
 		{
-			SalApiAuthorization authorization = new();
-			configure?.Invoke( authorization );
+			SalApiOptions options = new( defaultPrefix );
+			configure?.Invoke( options );
 
-			return authorization;
+			return options;
+		}
+
+		// Where a surface's endpoints are mapped: a group under its prefix, or the builder itself for an
+		// empty one. Validated at mapping time.
+		internal static IEndpointRouteBuilder Mount( IEndpointRouteBuilder routes, SalApiOptions options )
+		{
+			ArgumentNullException.ThrowIfNull( options );
+
+			string prefix = SalRoutes.NormalizePrefix( options.RoutePrefix );
+
+			return prefix.Length == 0 ? routes : routes.MapGroup( prefix );
 		}
 
 		// The conventions every endpoint of a surface gets: an authenticated caller (the default
 		// policy), then the host's policy and scopes, if any. Validated, and the scopes copied, once
 		// per surface at mapping time.
-		internal static Func<RouteHandlerBuilder, RouteHandlerBuilder> Conventions( SalApiAuthorization authorization )
+		internal static Func<RouteHandlerBuilder, RouteHandlerBuilder> Conventions( SalApiOptions authorization )
 		{
 			ArgumentNullException.ThrowIfNull( authorization );
 

@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Authentication;
 using System.Text;
 using Microsoft.Extensions.DependencyInjection;
@@ -106,13 +107,41 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 	[Fact]
 	public async Task AuthenticationAndAuthorization()
 	{
-		using HttpResponseMessage anonymous = await _fixture.CreateClient( null ).GetAsync( "sal/countries" );
+		using HttpResponseMessage anonymous = await _fixture.CreateClient( null ).GetAsync( "directory/countries" );
 
 		Assert.Equal( HttpStatusCode.Unauthorized, anonymous.StatusCode );
 		await Assert.ThrowsAsync<AuthenticationException>( () => _fixture.DirectoryClient( null ).GetCountriesAsync() );
 		await Assert.ThrowsAsync<AccessDeniedException>( () => _fixture.DirectoryClient( "nobody" ).GetCountriesAsync() );
 		await Assert.ThrowsAsync<AccessDeniedException>( () => _fixture.AdministrationClient( SalApiFixture.Reader ).RetireCountryAsync( "AU" ) );
 		Assert.Equal( "seed", Assert.Single( await _fixture.AdministrationClient( SalApiFixture.Admin ).GetImportRunsAsync( "AU" ) ).Source );
+	}
+
+	// A created record's Location is the path of its read endpoint, under the surface's prefix.
+	[Fact]
+	public async Task CreatedRecordsLocateTheirReadEndpoints()
+	{
+		string code = await NewCountryAsync();
+		HttpClient admin = _fixture.CreateClient( SalApiFixture.Admin );
+
+		using HttpResponseMessage country = await admin.PostAsJsonAsync( "administration/countries",
+										new CountryDefinition { Code = "XL", Name = "Located", HasSubdivisions = true } );
+		using HttpResponseMessage subdivision = await admin.PostAsJsonAsync( $"administration/countries/{code}/subdivisions",
+										new SubdivisionDefinition { Code = "S 2", Name = "Two" } );
+		using HttpResponseMessage locality = await admin.PostAsJsonAsync( $"administration/countries/{code}/localities",
+										new LocalityDefinition { Subdivision = "S1", Postcode = "2000", Name = "Mount Town" } );
+
+		Assert.Equal( "/administration/countries/XL", country.Headers.Location!.OriginalString );
+		Assert.Equal( $"/administration/countries/{code}/subdivisions/S%202", subdivision.Headers.Location!.OriginalString );
+		Assert.Equal( $"/administration/countries/{code}/locality?subdivision=S1&postcode=2000&name=Mount%20Town",
+					locality.Headers.Location!.OriginalString );
+
+		foreach( HttpResponseMessage created in new[] { country, subdivision, locality } )
+		{
+			Assert.Equal( HttpStatusCode.Created, created.StatusCode );
+
+			using HttpResponseMessage read = await admin.GetAsync( created.Headers.Location );
+			Assert.Equal( HttpStatusCode.OK, read.StatusCode );
+		}
 	}
 
 	// Only AccessDeniedException is a refusal (403). An operating-system UnauthorizedAccessException
@@ -125,7 +154,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Exception? thrown = await Record.ExceptionAsync( async () =>
 		{
 			using HttpResponseMessage response = await _fixture.CreateClient( SalApiFixture.Admin ).PostAsync(
-				"sal/admin/countries/AU/imports?importer=os-denied",
+				"administration/countries/AU/imports?importer=os-denied",
 				new ByteArrayContent( new byte[] { 1 } ) { Headers = { ContentType = new( "application/octet-stream" ) } } );
 
 			status = response.StatusCode;
@@ -141,7 +170,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 	{
 		string code = await NewCountryAsync();
 		HttpClient client = _fixture.CreateClient( SalApiFixture.Reader );
-		string path = $"sal/countries/{code}/subdivisions";
+		string path = $"directory/countries/{code}/subdivisions";
 
 		using HttpResponseMessage first = await client.GetAsync( path );
 		EntityTagHeaderValue tag = first.Headers.ETag!;

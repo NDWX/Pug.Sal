@@ -8,7 +8,7 @@ description: Use when an application reads from Pug.Sal or validates addresses a
 `ILocalityDirectory` (`Pug.Sal.Abstractions`) is Sal's read API: lookup, listing, search and validation over countries, subdivisions (states, territories) and localities (suburb/postcode pairs). It has two implementations with **the same contract, exceptions included**:
 
 - **in-process**, `LocalityDirectory`, when your application hosts Sal (`AddSal()`; see `sal-host`);
-- **over HTTP**, `LocalityDirectoryClient` (`Pug.Sal.Client`), against a host that maps `sal/`.
+- **over HTTP**, `LocalityDirectoryClient` (`Pug.Sal.Client`), against a host that maps the directory endpoints (under `directory/` unless the host chose another prefix).
 
 Code against the interface, and choose the implementation in DI. Results are the audit-free `CountryInfo`, `SubdivisionInfo` and `LocalityInfo`. Writes and audit fields are in `sal-administration`.
 
@@ -22,7 +22,7 @@ services.AddSingleton<IHttpApiClient>( p =>
 {
 	IHttpClientFactory http = p.GetRequiredService<IHttpClientFactory>();
 
-	return new HttpApiClient( new Uri( "https://sal.example.com/" ), http,   // include any path prefix the host maps under
+	return new HttpApiClient( new Uri( "https://sal.example.com/" ), http,   // the host, with any base path it is served under; keep the trailing slash
 		messageDecorators: new IHttpRequestMessageDecorator[]
 		{
 			// Service-to-service (Pug.HttpApiClient.OAuth2). For calls on behalf of a signed-in user,
@@ -30,11 +30,14 @@ services.AddSingleton<IHttpApiClient>( p =>
 			new ClientCredentialsDecorator( tokenEndpoint, clientId, clientSecret, "api://sal/.default", http )
 		} );
 } );
-services.AddSingleton<ILocalityDirectory>( p => new LocalityDirectoryClient( p.GetRequiredService<IHttpApiClient>() ) );
+// The second argument is the host's route prefix for the directory; omit it for the default, "directory".
+services.AddSingleton<ILocalityDirectory>( p => new LocalityDirectoryClient( p.GetRequiredService<IHttpApiClient>(), "directory" ) );
 ```
 
+- **Route prefix.** The client must use the prefix the host mapped the directory under (`SalApiOptions.RoutePrefix`, default `directory`). It is relative to the base address, so `new Uri( "https://example.com/api/" )` with `"sal"` calls `https://example.com/api/sal/countries`. Keep a trailing slash on a base address that has a path. A wrong prefix shows up as 404.
+
 - **Permissions.** Every call, reads included, needs the `VIEW` permission for the caller on the server. Which roles grant it is the host's choice.
-- **Scopes.** If the host requires OAuth scopes on `sal/` (D23), the token must carry one of them in `scp`/`scope`. **Entra app-only tokens (client credentials) carry `roles`, not `scp`**, so a service caller is refused (403) by a scope requirement. Agree with the host on a policy based on app roles for service callers.
+- **Scopes.** If the host requires OAuth scopes on the directory (D23), the token must carry one of them in `scp`/`scope`. **Entra app-only tokens (client credentials) carry `roles`, not `scp`**, so a service caller is refused (403) by a scope requirement. Agree with the host on a policy based on app roles for service callers.
 
 ## Operations
 

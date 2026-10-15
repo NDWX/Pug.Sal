@@ -3,6 +3,7 @@ using Pug.HttpApiClient;
 using Pug.HttpApiClient.Json;
 using Pug.Sal.Abstractions;
 using Pug.Sal.Models;
+using Pug.Sal.WebApi.Models;
 using static Pug.Sal.Client.SalPaths;
 
 namespace Pug.Sal.Client
@@ -13,50 +14,53 @@ namespace Pug.Sal.Client
 	// the server's facade.
 	public class LocalityDirectoryClient : ApiClient, ILocalityDirectory
 	{
-		private const string Root = "sal";
+		private readonly string _root;
 
-		public LocalityDirectoryClient( IHttpApiClient httpClient )
+		// routePrefix: where the host mounted the directory (SalApiOptions.RoutePrefix), relative to
+		// the IHttpApiClient's base address.
+		public LocalityDirectoryClient( IHttpApiClient httpClient, string routePrefix = SalRoutes.DefaultDirectoryPrefix )
 			: base( httpClient )
 		{
+			_root = Root( routePrefix );
 		}
 
 		public Task<IEnumerable<CountryInfo>> GetCountriesAsync( bool includeRetired = false ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<CountryInfo>>(
-				$"{Root}/countries", queries: Queries( ( "includeRetired", Flag( includeRetired ) ) ) ) );
+				$"{_root}countries", queries: Queries( ( "includeRetired", Flag( includeRetired ) ) ) ) );
 
 		public Task<IEnumerable<CountryVersion>> GetCountryVersionsAsync() =>
-			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<CountryVersion>>( $"{Root}/countries/versions" ) );
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<CountryVersion>>( $"{_root}countries/versions" ) );
 
 		public Task<CountryInfo> GetCountryAsync( string country ) =>
-			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<CountryInfo>( Country( Root, country ) ) );
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<CountryInfo>( Country( _root, country ) ) );
 
 		public Task<Versioned<IEnumerable<SubdivisionInfo>>> GetSubdivisionsAsync( string country, bool includeRetired = false ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<SubdivisionInfo>>>(
-				$"{Country( Root, country )}/subdivisions", queries: Queries( ( "includeRetired", Flag( includeRetired ) ) ) ) );
+				$"{Country( _root, country )}/subdivisions", queries: Queries( ( "includeRetired", Flag( includeRetired ) ) ) ) );
 
 		public Task<Versioned<SubdivisionInfo>> GetSubdivisionAsync( string country, string subdivision ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<SubdivisionInfo>>(
-				$"{Country( Root, country )}/subdivisions/{Escape( subdivision )}" ) );
+				$"{Country( _root, country )}/subdivisions/{Escape( subdivision )}" ) );
 
 		public Task<Versioned<IEnumerable<LocalityInfo>>> GetLocalitiesAsync( string country, string subdivision = null!, string postcode = null!,
 																			string name = null!, bool includeRetired = false ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<LocalityInfo>>>(
-				$"{Country( Root, country )}/localities",
+				$"{Country( _root, country )}/localities",
 				queries: Queries( ( "subdivision", subdivision ), ( "postcode", postcode ), ( "name", name ),
 								( "includeRetired", Flag( includeRetired ) ) ) ) );
 
 		public Task<Versioned<LocalityInfo>> GetLocalityAsync( string country, string subdivision, string postcode, string name ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<LocalityInfo>>(
-				$"{Country( Root, country )}/locality", queries: LocalityKey( subdivision, postcode, name ) ) );
+				$"{Country( _root, country )}/locality", queries: LocalityKey( subdivision, postcode, name ) ) );
 
 		public Task<Versioned<IEnumerable<LocalityInfo>>> SearchLocalitiesAsync( string country, string text, string subdivision = null!,
 																				int limit = 20 ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<LocalityInfo>>>(
-				$"{Country( Root, country )}/localities/search",
+				$"{Country( _root, country )}/localities/search",
 				queries: Queries( ( "text", text ), ( "subdivision", subdivision ),
 								( "limit", limit.ToString( CultureInfo.InvariantCulture ) ) ) ) );
 
 		public Task<ValidationResult> ValidateAsync( AddressCandidate candidate ) =>
-			ApiFailures.TranslateAsync( () => HttpClient.PostAsync<AddressCandidate, ValidationResult>( $"{Root}/validate", candidate ) );
+			ApiFailures.TranslateAsync( () => HttpClient.PostAsync<AddressCandidate, ValidationResult>( $"{_root}validate", candidate ) );
 	}
 }

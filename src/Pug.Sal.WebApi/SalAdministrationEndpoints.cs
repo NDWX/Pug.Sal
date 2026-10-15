@@ -15,10 +15,10 @@ namespace Pug.Sal.WebApi
 		public const string ImportOptionPrefix = "option.";
 
 		/// <summary>
-		/// Maps the <see cref="ILocalityAdministration"/> surface under <c>sal/admin/</c> (DECISIONS
-		/// D16, D20): full records, audit contexts included. Pass <c>app</c> to mount at the
-		/// application root, or a group from <c>app.MapGroup( "/prefix" )</c> to mount beneath a
-		/// further prefix.
+		/// Maps the <see cref="ILocalityAdministration"/> surface (DECISIONS D16, D20): full records,
+		/// audit contexts included, under <see cref="SalApiOptions.RoutePrefix"/>,
+		/// <c>administration/</c> by default. Pass <c>app</c> to mount at the application root, or a
+		/// group from <c>app.MapGroup( "/prefix" )</c> to mount beneath a further prefix.
 		/// Every endpoint requires an authenticated caller and, when <paramref name="configure"/> sets
 		/// them, one of its scopes and its policy (D23); administration itself authorizes. Reads
 		/// carry an ETag as the directory's do. An import posts the dataset itself as the request
@@ -30,15 +30,16 @@ namespace Pug.Sal.WebApi
 		/// <c>AddOpenApi()</c> with <c>MapOpenApi()</c>.
 		/// </summary>
 		/// <param name="routes">Where to map.</param>
-		/// <param name="configure">Sets the scopes and policy administration requires; null for none.</param>
+		/// <param name="configure">Sets administration's route prefix, scopes and policy; null for the defaults.</param>
 		public static IEndpointRouteBuilder MapSalAdministrationEndpoints( this IEndpointRouteBuilder routes,
-																		Action<SalApiAuthorization>? configure = null ) =>
-			routes.MapAdministrationEndpoints( SalAuthorization.Configure( configure ) );
+																		Action<SalApiOptions>? configure = null ) =>
+			routes.MapAdministrationEndpoints( SalAuthorization.Configure( SalRoutes.DefaultAdministrationPrefix, configure ) );
 
 		internal static IEndpointRouteBuilder MapAdministrationEndpoints( this IEndpointRouteBuilder routes,
-																			SalApiAuthorization authorization )
+																			SalApiOptions options )
 		{
-			Func<RouteHandlerBuilder, RouteHandlerBuilder> authorize = SalAuthorization.Conventions( authorization );
+			Func<RouteHandlerBuilder, RouteHandlerBuilder> authorize = SalAuthorization.Conventions( options );
+			IEndpointRouteBuilder surface = SalAuthorization.Mount( routes, options );
 
 			RouteHandlerBuilder Endpoint( RouteHandlerBuilder endpoint, string name, string summary ) =>
 				authorize( endpoint )
@@ -49,129 +50,129 @@ namespace Pug.Sal.WebApi
 
 			// == Reads ==
 
-			Endpoint( routes.MapGet( "sal/admin/countries", GetCountries ), "SalAdminGetCountries",
+			Endpoint( surface.MapGet( "countries", GetCountries ), "SalAdminGetCountries",
 					"List countries with their audit contexts, current ones unless includeRetired" )
 				.Produces<IEnumerable<Country>>()
 				.NotModified();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/versions", GetCountryVersions ), "SalAdminGetCountryVersions",
+			Endpoint( surface.MapGet( "countries/versions", GetCountryVersions ), "SalAdminGetCountryVersions",
 					"Get every country's current dataset version, for cache revalidation" )
 				.Produces<IEnumerable<CountryVersion>>()
 				.NotModified();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}", GetCountry ), "SalAdminGetCountry",
+			Endpoint( surface.MapGet( "countries/{country}", GetCountry ), "SalAdminGetCountry",
 					"Get a country with its audit contexts" )
 				.Produces<Country>()
 				.NotModified()
 				.NotFound();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}/subdivisions", GetSubdivisions ), "SalAdminGetSubdivisions",
+			Endpoint( surface.MapGet( "countries/{country}/subdivisions", GetSubdivisions ), "SalAdminGetSubdivisions",
 					"List a country's subdivisions with their audit contexts, current ones unless includeRetired" )
 				.Produces<Versioned<IEnumerable<Subdivision>>>()
 				.NotModified()
 				.NotFound();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}/subdivisions/{subdivision}", GetSubdivision ), "SalAdminGetSubdivision",
+			Endpoint( surface.MapGet( "countries/{country}/subdivisions/{subdivision}", GetSubdivision ), "SalAdminGetSubdivision",
 					"Get a subdivision with its audit contexts" )
 				.Produces<Versioned<Subdivision>>()
 				.NotModified()
 				.NotFound();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}/localities/search", SearchLocalities ), "SalAdminSearchLocalities",
+			Endpoint( surface.MapGet( "countries/{country}/localities/search", SearchLocalities ), "SalAdminSearchLocalities",
 					"Search a country's current localities by name prefix, with their audit contexts" )
 				.Produces<Versioned<IEnumerable<Locality>>>()
 				.NotModified()
 				.Invalid()
 				.NotFound();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}/localities", GetLocalities ), "SalAdminGetLocalities",
+			Endpoint( surface.MapGet( "countries/{country}/localities", GetLocalities ), "SalAdminGetLocalities",
 					"List a country's localities with their audit contexts, optionally by subdivision, postcode and name" )
 				.Produces<Versioned<IEnumerable<Locality>>>()
 				.NotModified()
 				.NotFound();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}/locality", GetLocality ), "SalAdminGetLocality",
+			Endpoint( surface.MapGet( "countries/{country}/locality", GetLocality ), "SalAdminGetLocality",
 					"Get a locality with its audit contexts by its key: subdivision, postcode and name" )
 				.Produces<Versioned<Locality>>()
 				.NotModified()
 				.Invalid()
 				.NotFound();
 
-			Endpoint( routes.MapGet( "sal/admin/countries/{country}/imports", GetImportRuns ), "SalAdminGetImportRuns",
+			Endpoint( surface.MapGet( "countries/{country}/imports", GetImportRuns ), "SalAdminGetImportRuns",
 					"List a country's import runs, most recent first" )
 				.Produces<IEnumerable<ImportRun>>()
 				.NotFound();
 
 			// == Countries ==
 
-			Endpoint( routes.MapPost( "sal/admin/countries", CreateCountry ), "SalAdminCreateCountry", "Create a country" )
+			Endpoint( surface.MapPost( "countries", CreateCountry ), "SalAdminCreateCountry", "Create a country" )
 				.Produces<Country>( StatusCodes.Status201Created )
 				.Invalid()
 				.Duplicate();
 
-			Endpoint( routes.MapPut( "sal/admin/countries/{country}", UpdateCountry ), "SalAdminUpdateCountry",
+			Endpoint( surface.MapPut( "countries/{country}", UpdateCountry ), "SalAdminUpdateCountry",
 					"Replace a country's definition; the route names the country" )
 				.Produces<Country>()
 				.Invalid()
 				.NotFound();
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/retire", RetireCountry ), "SalAdminRetireCountry",
+			Endpoint( surface.MapPost( "countries/{country}/retire", RetireCountry ), "SalAdminRetireCountry",
 					"Retire a country; retiring a retired country changes nothing" )
 				.Produces<Country>()
 				.NotFound();
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/reinstate", ReinstateCountry ), "SalAdminReinstateCountry",
+			Endpoint( surface.MapPost( "countries/{country}/reinstate", ReinstateCountry ), "SalAdminReinstateCountry",
 					"Reinstate a retired country; reinstating a current country changes nothing" )
 				.Produces<Country>()
 				.NotFound();
 
 			// == Subdivisions ==
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/subdivisions", CreateSubdivision ), "SalAdminCreateSubdivision",
+			Endpoint( surface.MapPost( "countries/{country}/subdivisions", CreateSubdivision ), "SalAdminCreateSubdivision",
 					"Create a subdivision; the route names the country" )
 				.Produces<Versioned<Subdivision>>( StatusCodes.Status201Created )
 				.Invalid()
 				.NotFound()
 				.Duplicate();
 
-			Endpoint( routes.MapPut( "sal/admin/countries/{country}/subdivisions/{subdivision}", UpdateSubdivision ), "SalAdminUpdateSubdivision",
+			Endpoint( surface.MapPut( "countries/{country}/subdivisions/{subdivision}", UpdateSubdivision ), "SalAdminUpdateSubdivision",
 					"Replace a subdivision's name and type; the route names the subdivision" )
 				.Produces<Versioned<Subdivision>>()
 				.Invalid()
 				.NotFound();
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/subdivisions/{subdivision}/retire", RetireSubdivision ),
+			Endpoint( surface.MapPost( "countries/{country}/subdivisions/{subdivision}/retire", RetireSubdivision ),
 					"SalAdminRetireSubdivision", "Retire a subdivision; retiring a retired subdivision changes nothing" )
 				.Produces<Versioned<Subdivision>>()
 				.NotFound();
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/subdivisions/{subdivision}/reinstate", ReinstateSubdivision ),
+			Endpoint( surface.MapPost( "countries/{country}/subdivisions/{subdivision}/reinstate", ReinstateSubdivision ),
 					"SalAdminReinstateSubdivision", "Reinstate a retired subdivision; reinstating a current subdivision changes nothing" )
 				.Produces<Versioned<Subdivision>>()
 				.NotFound();
 
 			// == Localities ==
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/localities", CreateLocality ), "SalAdminCreateLocality",
+			Endpoint( surface.MapPost( "countries/{country}/localities", CreateLocality ), "SalAdminCreateLocality",
 					"Create a locality; the route names the country" )
 				.Produces<Versioned<Locality>>( StatusCodes.Status201Created )
 				.Invalid()
 				.NotFound()
 				.Duplicate();
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/locality/retire", RetireLocality ), "SalAdminRetireLocality",
+			Endpoint( surface.MapPost( "countries/{country}/locality/retire", RetireLocality ), "SalAdminRetireLocality",
 					"Retire a locality, named by subdivision, postcode and name" )
 				.Produces<Versioned<Locality>>()
 				.Invalid()
 				.NotFound();
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/locality/reinstate", ReinstateLocality ), "SalAdminReinstateLocality",
+			Endpoint( surface.MapPost( "countries/{country}/locality/reinstate", ReinstateLocality ), "SalAdminReinstateLocality",
 					"Reinstate a retired locality, named by subdivision, postcode and name" )
 				.Produces<Versioned<Locality>>()
 				.Invalid()
 				.NotFound();
 
-			Endpoint( routes.MapDelete( "sal/admin/countries/{country}/locality", DeleteLocality ), "SalAdminDeleteLocality",
+			Endpoint( surface.MapDelete( "countries/{country}/locality", DeleteLocality ), "SalAdminDeleteLocality",
 					"Delete a locality, named by subdivision, postcode and name; returns the dataset version produced" )
 				.Produces<DatasetVersionResult>()
 				.Invalid()
@@ -179,7 +180,7 @@ namespace Pug.Sal.WebApi
 
 			// == Imports ==
 
-			Endpoint( routes.MapPost( "sal/admin/countries/{country}/imports", Import ), "SalAdminImport",
+			Endpoint( surface.MapPost( "countries/{country}/imports", Import ), "SalAdminImport",
 					"Import a dataset covering the whole country" )
 				.WithDescription( ImportDescription )
 				.Accepts<Stream>( ImportMediaTypes[ 0 ], ImportMediaTypes[ 1.. ] )
@@ -278,14 +279,17 @@ namespace Pug.Sal.WebApi
 		// == Countries ==
 
 		private static async Task<IResult> CreateCountry( [FromBody] CountryDefinition? definition,
-														[FromServices] ILocalityAdministration administration )
+														[FromServices] ILocalityAdministration administration,
+														HttpContext http, [FromServices] LinkGenerator links )
 		{
 			if( definition is null )
 				return SalResults.MissingArgument( nameof(definition) );
 
 			return await SalResults.HandleAsync(
 							() => administration.CreateCountryAsync( definition ),
-							country => Results.Created( $"sal/admin/countries/{Uri.EscapeDataString( country.Definition.Code )}", country ) )
+							country => Results.Created(
+								Location( http, links, "SalAdminGetCountry", new RouteValueDictionary { [ "country" ] = country.Definition.Code } ),
+								country ) )
 						.ConfigureAwait( false );
 		}
 
@@ -310,7 +314,8 @@ namespace Pug.Sal.WebApi
 
 		// The route names the country; the body's Country is ignored.
 		private static async Task<IResult> CreateSubdivision( [FromRoute] string country, [FromBody] SubdivisionDefinition? definition,
-															[FromServices] ILocalityAdministration administration )
+															[FromServices] ILocalityAdministration administration,
+															HttpContext http, [FromServices] LinkGenerator links )
 		{
 			if( definition is null )
 				return SalResults.MissingArgument( nameof(definition) );
@@ -318,7 +323,10 @@ namespace Pug.Sal.WebApi
 			return await SalResults.HandleAsync(
 							() => administration.CreateSubdivisionAsync( definition with { Country = country } ),
 							created => Results.Created(
-								$"sal/admin/countries/{Uri.EscapeDataString( created.Value.Definition.Country )}/subdivisions/{Uri.EscapeDataString( created.Value.Definition.Code )}",
+								Location( http, links, "SalAdminGetSubdivision", new RouteValueDictionary
+								{
+									[ "country" ] = created.Value.Definition.Country, [ "subdivision" ] = created.Value.Definition.Code
+								} ),
 								created ) )
 						.ConfigureAwait( false );
 		}
@@ -349,26 +357,37 @@ namespace Pug.Sal.WebApi
 
 		// The route names the country; the body's Country is ignored.
 		private static async Task<IResult> CreateLocality( [FromRoute] string country, [FromBody] LocalityDefinition? definition,
-															[FromServices] ILocalityAdministration administration )
+															[FromServices] ILocalityAdministration administration,
+															HttpContext http, [FromServices] LinkGenerator links )
 		{
 			if( definition is null )
 				return SalResults.MissingArgument( nameof(definition) );
 
 			return await SalResults.HandleAsync(
 							() => administration.CreateLocalityAsync( definition with { Country = country } ),
-							created => Results.Created( LocalityLocation( created.Value.Definition ), created ) )
+							created => Results.Created( LocalityLocation( http, links, created.Value.Definition ), created ) )
 						.ConfigureAwait( false );
 		}
 
-		private static string LocalityLocation( LocalityDefinition locality )
+		// A locality is addressed by query; absent key parts are left out.
+		private static string? LocalityLocation( HttpContext http, LinkGenerator links, LocalityDefinition locality )
 		{
-			string query = string.Join( "&",
-				new[] { ( "subdivision", locality.Subdivision ), ( "postcode", locality.Postcode ), ( "name", locality.Name ) }
-					.Where( p => p.Item2 is not null )
-					.Select( p => $"{p.Item1}={Uri.EscapeDataString( p.Item2 )}" ) );
+			RouteValueDictionary values = new() { [ "country" ] = locality.Country };
 
-			return $"sal/admin/countries/{Uri.EscapeDataString( locality.Country )}/locality?{query}";
+			foreach( ( string name, string? value ) in new[]
+						{ ( "subdivision", locality.Subdivision ), ( "postcode", locality.Postcode ), ( "name", locality.Name ) } )
+			{
+				if( value is not null )
+					values[ name ] = value;
+			}
+
+			return Location( http, links, "SalAdminGetLocality", values );
 		}
+
+		// The path of the named read endpoint, wherever the host mounted the surface (its prefix, any
+		// enclosing group and the request's PathBase included).
+		private static string? Location( HttpContext http, LinkGenerator links, string endpoint, RouteValueDictionary values ) =>
+			links.GetPathByName( http, endpoint, values );
 
 		private static async Task<IResult> RetireLocality( [FromRoute] string country, [FromQuery] string? subdivision,
 															[FromQuery] string? postcode, [FromQuery] string? name,

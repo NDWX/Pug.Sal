@@ -563,6 +563,49 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 		Assert.Equal( versions.Max(), ( await ReadAsync( s => s.GetCountryAsync( code ) ) )!.CurrentVersion );
 	}
 
+	// A read unit of work takes no write lock (DECISIONS D19): a write to the same country completes
+	// while a read is open, and the read keeps seeing the snapshot it started with.
+	[Fact]
+	public async Task AnOpenReadDoesNotBlockAWrite()
+	{
+		string code = NewCountry();
+		await WriteAsync( s => s.InsertCountryAsync( NewCountryRecord( code, version: Base ) ) );
+
+		TaskCompletionSource readStarted = new( TaskCreationOptions.RunContinuationsAsynchronously );
+		TaskCompletionSource writeDone = new( TaskCreationOptions.RunContinuationsAsynchronously );
+
+		Task<( DateTime? before, DateTime? after )> read = Task.Run( () => _fixture.ApplicationData.ReadAsync(
+						async ( session, context ) =>
+						{
+							DateTime? before = ( await session.GetCountryAsync( context ) )?.CurrentVersion;
+							readStarted.SetResult();
+							await writeDone.Task;
+
+							return ( before, ( await session.GetCountryAsync( context ) )?.CurrentVersion );
+						},
+						code ) );
+
+		try
+		{
+			await readStarted.Task.WaitAsync( TimeSpan.FromSeconds( 10 ) );
+
+			await Task.Run( () => _fixture.ApplicationData.WriteAsync(
+							( session, context ) => session.AdvanceVersionAsync( context, Base.AddDays( 1 ) ),
+							code ) )
+						.WaitAsync( TimeSpan.FromSeconds( 5 ) );
+		}
+		finally
+		{
+			writeDone.TrySetResult();
+		}
+
+		( DateTime? before, DateTime? after ) = await read;
+
+		Assert.Equal( Base, before );
+		Assert.Equal( Base, after );
+		Assert.Equal( Base.AddDays( 1 ), ( await ReadAsync( s => s.GetCountryAsync( code ) ) )!.CurrentVersion );
+	}
+
 	[Fact]
 	public async Task FailedUnitOfWorkRollsBackEveryWrite()
 	{

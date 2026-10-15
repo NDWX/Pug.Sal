@@ -25,13 +25,65 @@ namespace Pug.Sal.Data.SQLite
 		// atomicity and no write lock held across a unit of work (which AdvanceVersionAsync relies
 		// on). So the session opens a real SQLite transaction when created inside a scope and ties
 		// its commit/rollback to the scope's outcome.
+		//
+		// Which kind of SQLite transaction depends on the unit of work (UnitsOfWork, DECISIONS D19):
+		// - A write (ReadCommitted, or any level other than below) is IMMEDIATE: it takes the write
+		//   lock at BEGIN, so writers queue up front instead of failing to upgrade a read lock.
+		// - A read (RepeatableRead or Snapshot) is DEFERRED: it takes no lock until its first read,
+		//   then sees one snapshot (in WAL mode) without blocking writers or other readers.
+		// Microsoft.Data.Sqlite begins IMMEDIATE for every level but ReadUncommitted, so the deferred
+		// transaction needs SqliteConnection's own overload, outside ApplicationDataSession's
+		// transaction chain.
 		private ScopeEnlistment? _enlistment;
+
+		private SqliteTransaction? _deferred;
 
 		internal void EnlistInAmbientTransaction( Transaction transaction )
 		{
-			BeginTransaction();
+			if( IsRead( transaction.IsolationLevel ) && Connection is SqliteConnection connection )
+				_deferred = connection.BeginTransaction( deferred: true );
+			else
+				BeginTransaction();
+
 			_enlistment = new ScopeEnlistment( this );
 			transaction.EnlistVolatile( _enlistment, EnlistmentOptions.None );
+		}
+
+		private static bool IsRead( System.Transactions.IsolationLevel level ) =>
+			level is System.Transactions.IsolationLevel.RepeatableRead or System.Transactions.IsolationLevel.Snapshot;
+
+		private void CommitEnlisted()
+		{
+			if( _deferred is null )
+			{
+				CommitTransaction();
+
+				return;
+			}
+
+			_deferred.Commit();
+			_deferred.Dispose();
+			_deferred = null;
+		}
+
+		private void RollbackEnlisted()
+		{
+			if( _deferred is null )
+			{
+				RollbackTransaction();
+
+				return;
+			}
+
+			try
+			{
+				_deferred.Rollback();
+			}
+			finally
+			{
+				_deferred.Dispose();
+				_deferred = null;
+			}
 		}
 
 		// ApplicationData disposes the session before the scope completes, so while an enlisted
@@ -71,13 +123,13 @@ namespace Pug.Sal.Data.SQLite
 			{
 				try
 				{
-					_session.CommitTransaction();
+					_session.CommitEnlisted();
 				}
 				catch( Exception exception )
 				{
 					try
 					{
-						_session.RollbackTransaction();
+						_session.RollbackEnlisted();
 					}
 					catch
 					{
@@ -105,7 +157,7 @@ namespace Pug.Sal.Data.SQLite
 				try
 				{
 					if( !_committed )
-						_session.RollbackTransaction();
+						_session.RollbackEnlisted();
 				}
 				finally
 				{

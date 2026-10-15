@@ -5,7 +5,7 @@ description: Use when maintaining Pug.Sal's reference data through ILocalityAdmi
 
 # Maintaining Pug.Sal's reference data
 
-`ILocalityAdministration` (`Pug.Sal.Abstractions`) is Sal's write API, plus the reads an administrator needs. It is implemented in-process by `LocalityAdministration` and over HTTP (`sal/admin/…`) by `LocalityAdministrationClient` (`Pug.Sal.Client`). Both have the same contract and the same exceptions. Wire the client exactly like `LocalityDirectoryClient` (see `sal-directory`): `new LocalityAdministrationClient( httpApiClient )`.
+`ILocalityAdministration` (`Pug.Sal.Abstractions`) is Sal's write API, plus the reads an administrator needs. It is implemented in-process by `LocalityAdministration` and over HTTP (`administration/…` unless the host chose another route prefix) by `LocalityAdministrationClient` (`Pug.Sal.Client`). Both have the same contract and the same exceptions. Wire the client exactly like `LocalityDirectoryClient` (see `sal-directory`): `new LocalityAdministrationClient( httpApiClient, routePrefix )`, where `routePrefix` is the host's administration prefix (default `administration`).
 
 Its records are the full `Country`, `Subdivision` and `Locality`, with **`Registration`** and **`LastUpdate`** (`ActionContext<Reference>`: actor and UTC timestamp). Its reads behave like the directory's.
 

@@ -11,9 +11,10 @@ namespace Pug.Sal.WebApi
 	public static class SalDirectoryEndpoints
 	{
 		/// <summary>
-		/// Maps the <see cref="ILocalityDirectory"/> surface under <c>sal/</c> (DECISIONS D16, D20):
-		/// audit-free records. Pass <c>app</c> to mount at the application root, or a group from
-		/// <c>app.MapGroup( "/prefix" )</c> to mount beneath a further prefix.
+		/// Maps the <see cref="ILocalityDirectory"/> surface (DECISIONS D16, D20): audit-free records,
+		/// under <see cref="SalApiOptions.RoutePrefix"/>, <c>directory/</c> by default. Pass <c>app</c>
+		/// to mount at the application root, or a group from <c>app.MapGroup( "/prefix" )</c> to mount
+		/// beneath a further prefix.
 		/// Every endpoint requires an authenticated caller and, when <paramref name="configure"/> sets
 		/// them, one of its scopes and its policy (D23); the directory itself authorizes. Reads
 		/// carry an ETag derived from the dataset version(s) they were read at and answer
@@ -25,17 +26,18 @@ namespace Pug.Sal.WebApi
 		/// <c>AddOpenApi()</c> with <c>MapOpenApi()</c>.
 		/// </summary>
 		/// <param name="routes">Where to map.</param>
-		/// <param name="configure">Sets the scopes and policy the directory requires; null for none.</param>
+		/// <param name="configure">Sets the directory's route prefix, scopes and policy; null for the defaults.</param>
 		public static IEndpointRouteBuilder MapSalDirectoryEndpoints( this IEndpointRouteBuilder routes,
-																	Action<SalApiAuthorization>? configure = null ) =>
-			routes.MapDirectoryEndpoints( SalAuthorization.Configure( configure ) );
+																	Action<SalApiOptions>? configure = null ) =>
+			routes.MapDirectoryEndpoints( SalAuthorization.Configure( SalRoutes.DefaultDirectoryPrefix, configure ) );
 
 		internal static IEndpointRouteBuilder MapDirectoryEndpoints( this IEndpointRouteBuilder routes,
-																		SalApiAuthorization authorization )
+																		SalApiOptions options )
 		{
-			Func<RouteHandlerBuilder, RouteHandlerBuilder> authorize = SalAuthorization.Conventions( authorization );
+			Func<RouteHandlerBuilder, RouteHandlerBuilder> authorize = SalAuthorization.Conventions( options );
+			IEndpointRouteBuilder surface = SalAuthorization.Mount( routes, options );
 
-			authorize( routes.MapGet( "sal/countries", GetCountries ) )
+			authorize( surface.MapGet( "countries", GetCountries ) )
 				.WithName( "SalGetCountries" )
 				.WithTags( "Sal" )
 				.WithSummary( "List countries, current ones unless includeRetired" )
@@ -43,7 +45,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden );
 
-			authorize( routes.MapGet( "sal/countries/versions", GetCountryVersions ) )
+			authorize( surface.MapGet( "countries/versions", GetCountryVersions ) )
 				.WithName( "SalGetCountryVersions" )
 				.WithTags( "Sal" )
 				.WithSummary( "Get every country's current dataset version, for cache revalidation" )
@@ -51,7 +53,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden );
 
-			authorize( routes.MapGet( "sal/countries/{country}", GetCountry ) )
+			authorize( surface.MapGet( "countries/{country}", GetCountry ) )
 				.WithName( "SalGetCountry" )
 				.WithTags( "Sal" )
 				.WithSummary( "Get a country by ISO 3166-1 alpha-2 code" )
@@ -60,7 +62,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status403Forbidden )
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
-			authorize( routes.MapGet( "sal/countries/{country}/subdivisions", GetSubdivisions ) )
+			authorize( surface.MapGet( "countries/{country}/subdivisions", GetSubdivisions ) )
 				.WithName( "SalGetSubdivisions" )
 				.WithTags( "Sal" )
 				.WithSummary( "List a country's subdivisions, current ones unless includeRetired" )
@@ -69,7 +71,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status403Forbidden )
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
-			authorize( routes.MapGet( "sal/countries/{country}/subdivisions/{subdivision}", GetSubdivision ) )
+			authorize( surface.MapGet( "countries/{country}/subdivisions/{subdivision}", GetSubdivision ) )
 				.WithName( "SalGetSubdivision" )
 				.WithTags( "Sal" )
 				.WithSummary( "Get a subdivision by code" )
@@ -78,7 +80,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status403Forbidden )
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
-			authorize( routes.MapGet( "sal/countries/{country}/localities/search", SearchLocalities ) )
+			authorize( surface.MapGet( "countries/{country}/localities/search", SearchLocalities ) )
 				.WithName( "SalSearchLocalities" )
 				.WithTags( "Sal" )
 				.WithSummary( "Search a country's current localities by name prefix" )
@@ -88,7 +90,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status403Forbidden )
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
-			authorize( routes.MapGet( "sal/countries/{country}/localities", GetLocalities ) )
+			authorize( surface.MapGet( "countries/{country}/localities", GetLocalities ) )
 				.WithName( "SalGetLocalities" )
 				.WithTags( "Sal" )
 				.WithSummary( "List a country's localities, optionally by subdivision, postcode and name" )
@@ -97,7 +99,7 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status403Forbidden )
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
-			authorize( routes.MapGet( "sal/countries/{country}/locality", GetLocality ) )
+			authorize( surface.MapGet( "countries/{country}/locality", GetLocality ) )
 				.WithName( "SalGetLocality" )
 				.WithTags( "Sal" )
 				.WithSummary( "Get a locality by its key: subdivision, postcode and name" )
@@ -108,7 +110,7 @@ namespace Pug.Sal.WebApi
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
 			// POST because the candidate travels as a body; it changes nothing.
-			authorize( routes.MapPost( "sal/validate", Validate ) )
+			authorize( surface.MapPost( "validate", Validate ) )
 				.WithName( "SalValidate" )
 				.WithTags( "Sal" )
 				.WithSummary( "Validate an address candidate's country, subdivision, locality and postcode" )
