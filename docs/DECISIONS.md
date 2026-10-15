@@ -732,6 +732,13 @@ instruction; the user chose to keep that work.)
     change to `OAuth20IdentityAccessor`, which is in progress. The accessor now identifies callers by
     `oid` when `tid` is present, falling back to `sub`, and returns an unauthenticated principal (not
     null) for anonymous callers. The skill also adds JwtBearer `RoleClaimType = "roles"`, and the
-    reference provider refuses unauthenticated principals. **Verification is pending that release**,
-    including pinning the exact package version in the skill.
+    reference provider refuses unauthenticated principals. **Verified 2026-10-15 against the source
+    of the preview build (`67725c8`, CI run 2: accessor 3.2.0-preview.2, Security and Abstractions
+    3.1.1-preview.2):**
+    - 12 signed-token JwtBearer tests pass, with claim mapping on and off; 11 of them fail on 3.1.0;
+    - the `sal-host` sample compiles;
+    - Sal, built against Abstractions 3.1.0, passes all 195 tests on 3.1.1.
+
+    The skill pins Security ≥ 3.1.1 and the accessor ≥ 3.2.0. The packages themselves weren't
+    restored, because the GitHub Packages feed needs a token.
   - The marketplace entry is added once S3 is done.
