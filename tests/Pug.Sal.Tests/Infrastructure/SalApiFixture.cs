@@ -26,8 +26,8 @@ namespace Pug.Sal.Tests.Infrastructure;
 // production DI extensions; only authentication and the security principal are faked. Users:
 // "reader" holds VIEW, "admin" every operation, anyone else nothing.
 //
-// Seeded through the clients themselves: AU (^\d{4}$, postcode required) with AU-NSW, AU-ACT and
-// AU-VIC, and a CSV import of Sydney 2000, Environa 2620 (NSW), Hume 2620 (ACT), St Kilda 3182.
+// Seeded through the clients themselves: AU (^\d{4}$, postcode required) with NSW, ACT and VIC,
+// and a CSV import of Sydney 2000, Environa 2620 (NSW), Hume 2620 (ACT), St Kilda 3182.
 public class SalApiFixture : IAsyncLifetime
 {
 	public const string Reader = "reader";
@@ -60,11 +60,11 @@ public class SalApiFixture : IAsyncLifetime
 			Code = "AU", Alpha3 = "AUS", Name = "Australia", PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true
 		} );
 
-		foreach( ( string code, string name ) in new[] { ( "AU-NSW", "New South Wales" ), ( "AU-ACT", "Australian Capital Territory" ), ( "AU-VIC", "Victoria" ) } )
+		foreach( ( string code, string name ) in new[] { ( "NSW", "New South Wales" ), ( "ACT", "Australian Capital Territory" ), ( "VIC", "Victoria" ) } )
 			await admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = "AU", Code = code, Name = name } );
 
 		await admin.ImportAsync( "AU",
-			new ImportRequest { Importer = "csv", Source = "seed", Options = new Dictionary<string, string> { [ "subdivisionPrefix" ] = "AU-" } },
+			new ImportRequest { Importer = "csv", Source = "seed" },
 			new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality\nNSW,2000,Sydney\nNSW,2620,Environa\nACT,2620,Hume\nVIC,3182,St Kilda\n" ) ) );
 	}
 

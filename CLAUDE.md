@@ -89,8 +89,9 @@ update the skill in the same commit.
   changes.
 - **Licensing** of datasets is the host's concern. Sal has no licence model.
 - **Territory placement** (e.g. whether AU external territories are their own countries or under
-  AU) is the data maintainer's choice. Subdivision codes are maintainer-defined (ISO 3166-2
-  recommended, not enforced), and postcodes are unique per country only.
+  AU) is the data maintainer's choice. Subdivision codes are maintainer-defined and keyed with
+  their country, so they exclude it (`NSW`, not `AU-NSW`; recommended, not enforced, D27).
+  Postcodes are unique per country only.
 - **Times:** all UTC. SQLite reads stamp `DateTimeKind.Utc`.
 
 ## Conventions

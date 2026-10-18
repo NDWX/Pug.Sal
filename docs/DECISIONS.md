@@ -25,8 +25,8 @@ implementations are `net10.0`.
 
 ## D2 — Fixed three-level model (user choice)
 
-Country (ISO 3166-1: alpha-2 is the key, alpha-3 is also stored) → Subdivision (code
-maintainer-defined, ISO 3166-2 recommended, e.g. `AU-NSW`; see D10) → Locality. Postcode ↔ locality is many-to-many. An arbitrary-depth hierarchy was
+Country (ISO 3166-1: alpha-2 is the key, alpha-3 is also stored) → Subdivision (keyed by country
+and code; the code is maintainer-defined and excludes the country, e.g. `NSW`; see D10, D27) → Locality. Postcode ↔ locality is many-to-many. An arbitrary-depth hierarchy was
 considered and rejected: it fits AU/NZ/US and most countries without one, and it keeps the queries
 flat.
 
@@ -186,8 +186,9 @@ packages.
   code). The model must allow any choice the maintainer makes:
   - A territory can be its own country (an `NF` country with a `^\d{4}$` postcode pattern), or a
     subdivision or localities under `AU`.
-  - Subdivision codes are therefore **maintainer-defined**. ISO 3166-2 is the recommended
-    convention, not a check Sal enforces, so a code like `AU-JBT` is accepted.
+  - Subdivision codes are therefore **maintainer-defined**. The ISO 3166-2 subdivision part,
+    without the country (`NSW` for `AU-NSW`, D27), is the recommended convention, not a check Sal
+    enforces, so a code like `JBT` is accepted.
   - Postcodes are unique only within a country, so `AU` 2899 and `NF` 2899 can coexist.
   - The AU fixture and CSV importer bake in no territory choice.
 
@@ -487,8 +488,8 @@ reads, and the two interfaces get their own implementations.
     names.
 - **`Pug.Sal.Importers.Csv` (`CsvDatasetImporter`, conventional name `csv`):**
   - RFC 4180 with a header record. Columns are found by header name (options `locality`,
-    `postcode`, `subdivision`), and `subdivisionPrefix` maps `NSW` to `AU-NSW`. The `delimiter`
-    option takes a single character or `tab`.
+    `postcode`, `subdivision`). The `delimiter` option takes a single character or `tab`.
+    Subdivision values are taken as they are; the `subdivisionPrefix` option was removed (D27).
   - Every record must have as many fields as the header. Values are trimmed and blank lines
     skipped.
   - Error positions are 1-based line numbers.
@@ -768,6 +769,29 @@ reads, and the two interfaces get their own implementations.
     `PackageValidationBaselineVersion` (the previous stable version) in `Directory.Build.props`,
     so `dotnet pack` fails on an API break the version does not admit. It is not on yet, because
     there is no stable baseline, and breaking changes are expected before then (D25).
+
+## D27 — Subdivision codes exclude the country (user directive, 2026-10-18)
+
+- **A subdivision is identified by `(country, code)`, so its code does not repeat the country:**
+  `NSW` under `AU`, not `AU-NSW`. A locality refers to its subdivision by the same pair, its
+  `country` and `subdivision` columns. The recommended convention (D10) is now the ISO 3166-2
+  subdivision part.
+- **Correctness of a code is the maintainer's matter.** Sal does not refuse or rewrite a code that
+  contains the country.
+- **The CSV importer's `subdivisionPrefix` option is removed.** It existed to turn a dataset's
+  `NSW` into a registered `AU-NSW`. With codes that exclude the country, a dataset's values are the
+  codes. The importer now ignores the option, like any unknown one, so a host still passing it
+  imports the values as they are.
+- **No database foreign key from locality to subdivision (user choice).** A locality in a country
+  without subdivisions stores `''` (D11), which no subdivision row matches. The facades keep
+  enforcing the reference (`UnknownSubdivisionException`), as before.
+- **Indexes are unchanged.** Country, subdivision and postcode stay separate columns. The primary key
+  `(country, subdivision, postcodeKey, nameKey)` serves lookups by country and by country and
+  subdivision. `ixLocalityPostcode (country, postcodeKey)` serves lookups by postcode, and
+  `ixLocalityName` serves lookups by name. The schema has no structural change, so the version-1
+  scripts stay as they are.
+- **Validation is unchanged.** It still matches a subdivision by code, by the code's part after
+  `<country>-` (for maintainers who registered prefixed codes), or by name.
 
 ## Verification conventions
 

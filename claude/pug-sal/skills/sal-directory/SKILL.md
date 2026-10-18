@@ -80,8 +80,8 @@ Sal validates **each component on its own, then the combination, and never corre
 | `MISMATCH` | **Combination only:** each part exists, but they don't belong together |
 
 - **`IsValid`** is true only when every component and the combination are `VALID` or `NOT_APPLICABLE`. **`RETIRED` makes it false.** Decide for yourself whether to accept a retired address, for example on an existing record but not on a new one.
-- **The subdivision** may be given as a code (`AU-NSW`), as the code without the country prefix (`NSW`), or as a name (`New South Wales`), case-insensitively.
-- **`Match`** is set only when the result is valid. It is the candidate in canonical form, for example `Sydney`, `AU-NSW`, `2000`. **Store `Match`, not what the user typed**, so your data uses Sal's codes and spellings. If the user gave no postcode, `Match.Postcode` stays null, because Sal won't fill one in.
+- **The subdivision** may be given as its code (`NSW`) or its name (`New South Wales`), case-insensitively. Where a maintainer registered codes with the country prefix (`AU-NSW`), the part after it (`NSW`) also matches.
+- **`Match`** is set only when the result is valid. It is the candidate in canonical form, for example `Sydney`, `NSW`, `2000`. **Store `Match`, not what the user typed**, so your data uses Sal's codes and spellings. If the user gave no postcode, `Match.Postcode` stays null, because Sal won't fill one in.
 - **`Suggestions`** are up to 10 valid combinations close to the candidate, for example the locality under its real postcodes, or the localities of the given postcode. They are empty when the address is valid, and for a retired country. Present them as choices. Never apply one silently.
 - **`DatasetVersion`** is the country version the result was computed against. Record it if you later need to show that an address was valid when you accepted it.
 

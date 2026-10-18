@@ -15,8 +15,6 @@ namespace Pug.Sal.Importers.Csv
 	// - "subdivision": header of the subdivision code column (default "subdivision").
 	//   A postcode or subdivision column named by option must exist; when left to its default and
 	//   absent, every row's value is null (countries without postcodes or subdivisions).
-	// - "subdivisionPrefix": prepended to each subdivision value not already starting with it, e.g.
-	//   "AU-" turns a dataset's "NSW" into "AU-NSW".
 	// - "delimiter": one character, or "tab" (default ",").
 	public sealed class CsvDatasetImporter : IDatasetImporter
 	{
@@ -50,7 +48,7 @@ namespace Pug.Sal.Importers.Csv
 				{
 					Locality = Value( fields, locality )!,
 					Postcode = Value( fields, postcode )!,
-					Subdivision = Prefixed( Value( fields, subdivision ), settings.SubdivisionPrefix )!
+					Subdivision = Value( fields, subdivision )!
 				};
 			}
 		}
@@ -76,13 +74,8 @@ namespace Pug.Sal.Importers.Csv
 			return value.Length == 0 ? null : value;
 		}
 
-		private static string? Prefixed( string? value, string? prefix ) =>
-			value is null || string.IsNullOrEmpty( prefix ) || value.StartsWith( prefix, StringComparison.OrdinalIgnoreCase )
-				? value
-				: prefix + value;
-
 		private sealed record CsvOptions( char Delimiter, string Locality, string Postcode, bool PostcodeGiven, string Subdivision,
-										bool SubdivisionGiven, string? SubdivisionPrefix )
+										bool SubdivisionGiven )
 		{
 			public static CsvOptions From( IDictionary<string, string>? options )
 			{
@@ -105,8 +98,7 @@ namespace Pug.Sal.Importers.Csv
 										postcode ?? "postcode",
 										postcode is not null,
 										subdivision ?? "subdivision",
-										subdivision is not null,
-										Get( "subdivisionPrefix" ) );
+										subdivision is not null );
 			}
 
 			private static char ParseDelimiter( string? value )

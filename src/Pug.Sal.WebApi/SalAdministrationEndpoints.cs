@@ -204,8 +204,8 @@ namespace Pug.Sal.WebApi
 			"importer (required) names a registered dataset importer, matched case-insensitively (e.g. csv); " +
 			"source (optional) is a free-form label recorded on the import run; " +
 			"option.<name>=<value> (any number) passes importer-specific options, each becoming ImportRequest.Options[<name>]. " +
-			"The csv importer reads option.locality, option.postcode and option.subdivision (header names of those columns), " +
-			"option.subdivisionPrefix (prepended to subdivision values, e.g. AU-) and option.delimiter (one character, or tab). " +
+			"The csv importer reads option.locality, option.postcode and option.subdivision (header names of those columns) " +
+			"and option.delimiter (one character, or tab); subdivision values must be the registered codes, unchanged. " +
 			"The dataset must cover the whole country: localities it does not hold are deleted. " +
 			"422 reports an unknown importer (UNKNOWN_IMPORTER) or an unreadable or invalid dataset (INVALID_DATASET, with Position).";
 

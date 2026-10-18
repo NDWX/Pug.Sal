@@ -59,20 +59,20 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 	{
 		CountryInfo au = await _directory.GetCountryAsync( "au" );
 		Versioned<IEnumerable<SubdivisionInfo>> subdivisions = await _directory.GetSubdivisionsAsync( "AU" );
-		Versioned<SubdivisionInfo> nsw = await _directory.GetSubdivisionAsync( "AU", "AU-NSW" );
+		Versioned<SubdivisionInfo> nsw = await _directory.GetSubdivisionAsync( "AU", "NSW" );
 		Versioned<IEnumerable<LocalityInfo>> shared = await _directory.GetLocalitiesAsync( "AU", postcode: "2620" );
-		Versioned<LocalityInfo> kilda = await _directory.GetLocalityAsync( "AU", "AU-VIC", "3182", "st kilda" );
+		Versioned<LocalityInfo> kilda = await _directory.GetLocalityAsync( "AU", "VIC", "3182", "st kilda" );
 		Versioned<IEnumerable<LocalityInfo>> search = await _directory.SearchLocalitiesAsync( "AU", "s" );
 
 		Assert.Equal( ( "AU", "Australia", DateTimeKind.Utc ), ( au.Definition.Code, au.Definition.Name, au.CurrentVersion.Kind ) );
 		Assert.Contains( await _directory.GetCountriesAsync(), c => c.Definition.Code == "AU" );
 		Assert.Contains( await _directory.GetCountryVersionsAsync(), v => v.Country == "AU" && v.Version == au.CurrentVersion );
-		Assert.Equal( new[] { "AU-ACT", "AU-NSW", "AU-VIC" }, subdivisions.Value.Select( s => s.Definition.Code ) );
+		Assert.Equal( new[] { "ACT", "NSW", "VIC" }, subdivisions.Value.Select( s => s.Definition.Code ) );
 		Assert.Equal( au.CurrentVersion, subdivisions.DatasetVersion );
 		Assert.Equal( "New South Wales", nsw.Value.Definition.Name );
-		Assert.Equal( new[] { "AU-ACT|2620|Hume", "AU-NSW|2620|Environa" }, Keys( shared.Value ) );
+		Assert.Equal( new[] { "ACT|2620|Hume", "NSW|2620|Environa" }, Keys( shared.Value ) );
 		Assert.Equal( "St Kilda", kilda.Value.Definition.Name );
-		Assert.Equal( new[] { "AU-VIC|3182|St Kilda", "AU-NSW|2000|Sydney" }, Keys( search.Value ) );
+		Assert.Equal( new[] { "VIC|3182|St Kilda", "NSW|2000|Sydney" }, Keys( search.Value ) );
 	}
 
 	[Fact]
@@ -82,24 +82,24 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		ValidationResult mismatch = await _directory.ValidateAsync( new AddressCandidate { Country = "AU", Subdivision = "ACT", Locality = "Environa", Postcode = "2620" } );
 
 		Assert.True( valid.IsValid );
-		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "AU-NSW", Locality = "Sydney", Postcode = "2000" }, valid.Match );
+		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "NSW", Locality = "Sydney", Postcode = "2000" }, valid.Match );
 		Assert.Equal( ValidationOutcomes.Mismatch, mismatch.Combination );
-		Assert.Equal( "AU-NSW", Assert.Single( mismatch.Suggestions ).Subdivision );
+		Assert.Equal( "NSW", Assert.Single( mismatch.Suggestions ).Subdivision );
 	}
 
 	[Fact]
 	public async Task FailuresSurfaceAsTheFacadesExceptions()
 	{
 		UnknownCountryException country = await Assert.ThrowsAsync<UnknownCountryException>( () => _directory.GetCountryAsync( "zz" ) );
-		UnknownSubdivisionException subdivision = await Assert.ThrowsAsync<UnknownSubdivisionException>( () => _directory.GetSubdivisionAsync( "AU", "AU-XX" ) );
+		UnknownSubdivisionException subdivision = await Assert.ThrowsAsync<UnknownSubdivisionException>( () => _directory.GetSubdivisionAsync( "AU", "XX" ) );
 		UnknownLocalityException locality = await Assert.ThrowsAsync<UnknownLocalityException>(
-			() => _directory.GetLocalityAsync( "AU", "AU-VIC", "2000", "Sydney" ) );
+			() => _directory.GetLocalityAsync( "AU", "VIC", "2000", "Sydney" ) );
 		ArgumentException text = await Assert.ThrowsAsync<ArgumentException>( () => _directory.SearchLocalitiesAsync( "AU", "" ) );
 		ArgumentException limit = await Assert.ThrowsAsync<ArgumentException>( () => _directory.SearchLocalitiesAsync( "AU", "s", limit: 0 ) );
 
 		Assert.Equal( "ZZ", country.Country );
-		Assert.Equal( ( "AU", "AU-XX" ), ( subdivision.Country, subdivision.Subdivision ) );
-		Assert.Equal( ( "AU", "AU-VIC", "2000", "Sydney" ), ( locality.Country, locality.Subdivision, locality.Postcode, locality.Name ) );
+		Assert.Equal( ( "AU", "XX" ), ( subdivision.Country, subdivision.Subdivision ) );
+		Assert.Equal( ( "AU", "VIC", "2000", "Sydney" ), ( locality.Country, locality.Subdivision, locality.Postcode, locality.Name ) );
 		Assert.Equal( "text", text.ParamName );
 		Assert.Equal( "limit", limit.ParamName );
 	}

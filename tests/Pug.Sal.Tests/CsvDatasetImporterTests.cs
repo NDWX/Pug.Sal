@@ -39,20 +39,19 @@ public class CsvDatasetImporterTests
 	}
 
 	[Fact]
-	public async Task HonoursABomAndCustomColumnsDelimiterAndPrefix()
+	public async Task HonoursABomAndCustomColumnsAndDelimiter()
 	{
 		Dictionary<string, string> options = new()
 		{
 			[ "LOCALITY" ] = "suburb",
 			[ "postcode" ] = "pcode",
 			[ "subdivision" ] = "state",
-			[ "subdivisionPrefix" ] = "AU-",
 			[ "delimiter" ] = "tab"
 		};
 
-		ImportRow[] rows = await ReadAsync( "suburb\tpcode\tstate\nSt Kilda\t3182\tVIC\nHume\t2620\tAU-ACT\n", options, new UTF8Encoding( true ) );
+		ImportRow[] rows = await ReadAsync( "suburb\tpcode\tstate\nSt Kilda\t3182\tVIC\nHume\t2620\tACT\n", options, new UTF8Encoding( true ) );
 
-		Assert.Equal( new[] { "AU-VIC|3182|St Kilda", "AU-ACT|2620|Hume" }, Keys( rows ) );
+		Assert.Equal( new[] { "VIC|3182|St Kilda", "ACT|2620|Hume" }, Keys( rows ) );
 	}
 
 	[Fact]

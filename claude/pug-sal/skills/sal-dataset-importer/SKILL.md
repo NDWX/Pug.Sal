@@ -18,7 +18,7 @@ public record ImportRow { string Subdivision; string Locality /* required */; st
 
 ## First check whether CSV is enough
 
-`Pug.Sal.Importers.Csv`'s `CsvDatasetImporter` (registered as `"csv"`) reads RFC 4180 CSV with a header. It finds columns by header name, which you set in options: `locality`, `postcode`, `subdivision`, `subdivisionPrefix` (for example `AU-`, turning `NSW` into `AU-NSW`) and `delimiter` (one character, or `tab`). Converting a vendor file to CSV upstream is often simpler than a new importer. Write one when the format isn't tabular text, when rows need joining or decoding, or when the dataset is published in a format you'd otherwise convert by hand on every edition.
+`Pug.Sal.Importers.Csv`'s `CsvDatasetImporter` (registered as `"csv"`) reads RFC 4180 CSV with a header. It finds columns by header name, which you set in options: `locality`, `postcode`, `subdivision` and `delimiter` (one character, or `tab`). Subdivision values are taken as they are, so they must be the registered codes, which exclude the country (`NSW`, not `AU-NSW`). Converting a vendor file to CSV upstream is often simpler than a new importer. Write one when the format isn't tabular text, when rows need joining or decoding, or when the dataset is published in a format you'd otherwise convert by hand on every edition.
 
 ## An importer only parses
 

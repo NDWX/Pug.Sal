@@ -11,7 +11,7 @@ Its records are the full `Country`, `Subdivision` and `Locality`, with **`Regist
 
 ## The model in one paragraph
 
-A **country** (`CountryDefinition`: alpha-2 `Code`, `Alpha3`, `Name`, `PostcodePattern`, `PostcodeRequired`, `HasSubdivisions`) holds **subdivisions** (`SubdivisionDefinition`: `Country`, maintainer-defined `Code`, with ISO 3166-2 such as `AU-NSW` recommended, `Name`, `Type` from `SubdivisionTypes`), which hold **localities**. A locality (`LocalityDefinition`: `Country`, `Subdivision`, `Postcode`, `Name`) is **one locality/postcode pair**. Its identity is `(country, subdivision, normalized postcode, normalized name)`, with no surrogate id. A suburb with two postcodes is two records. Countries and subdivisions are **never deleted, only retired**. Localities are **never updated**: they are created, retired, reinstated or deleted, so **a correction is a delete plus a create**. There is no history: Sal keeps current state and audit stamps only.
+A **country** (`CountryDefinition`: alpha-2 `Code`, `Alpha3`, `Name`, `PostcodePattern`, `PostcodeRequired`, `HasSubdivisions`) holds **subdivisions** (`SubdivisionDefinition`: `Country`, maintainer-defined `Code`, unique within the country and without it, so `NSW` rather than `AU-NSW` (the ISO 3166-2 subdivision part, recommended), `Name`, `Type` from `SubdivisionTypes`), which hold **localities**. A locality (`LocalityDefinition`: `Country`, `Subdivision`, `Postcode`, `Name`) is **one locality/postcode pair**. Its identity is `(country, subdivision, normalized postcode, normalized name)`, with no surrogate id. A suburb with two postcodes is two records. Countries and subdivisions are **never deleted, only retired**. Localities are **never updated**: they are created, retired, reinstated or deleted, so **a correction is a delete plus a create**. There is no history: Sal keeps current state and audit stamps only.
 
 ## Operations and permissions
 
@@ -50,11 +50,11 @@ An import never creates countries or subdivisions, so create them first:
 await admin.CreateCountryAsync( new CountryDefinition
 	{ Code = "AU", Alpha3 = "AUS", Name = "Australia", PostcodePattern = @"\d{4}", PostcodeRequired = true, HasSubdivisions = true } );
 
-foreach( ( string code, string name ) in new[] { ( "AU-NSW", "New South Wales" ), ( "AU-VIC", "Victoria" ) /* … */ } )
+foreach( ( string code, string name ) in new[] { ( "NSW", "New South Wales" ), ( "VIC", "Victoria" ) /* … */ } )
 	await admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = "AU", Code = code, Name = name, Type = SubdivisionTypes.State } );
 
 ImportRun run = await admin.ImportAsync( "AU",
-	new ImportRequest { Importer = "csv", Source = "AU localities 2026-10", Options = new Dictionary<string, string> { [ "subdivisionPrefix" ] = "AU-" } },
+	new ImportRequest { Importer = "csv", Source = "AU localities 2026-10" },
 	File.OpenRead( "au-localities.csv" ) );
 ```
 

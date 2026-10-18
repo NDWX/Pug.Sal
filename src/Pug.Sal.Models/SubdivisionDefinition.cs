@@ -20,9 +20,10 @@ namespace Pug.Sal.Models
 #endif
 		}
 
-		// Maintainer-defined, unique within the country. ISO 3166-2 (e.g. AU-NSW) is the
-		// recommended convention but is not enforced, so codes such as AU-JBT for territories
-		// without one are accepted.
+		// Maintainer-defined, unique within the country, and without the country, which is already
+		// part of the key. The ISO 3166-2 subdivision part (e.g. NSW for AU-NSW) is the recommended
+		// convention but is not enforced, so codes such as JBT for territories without one are
+		// accepted.
 		[Required, DataMember( IsRequired = true )]
 		public string Code
 		{
