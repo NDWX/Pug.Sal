@@ -129,7 +129,7 @@ namespace Pug.Sal
 			await PublishAsync( CountryChange( stored.Code, ChangeKinds.Created, action ) ).ConfigureAwait( false );
 
 			foreach( string category in categories )
-				await PublishAsync( CountryCategoryChange( stored.Code, category, ChangeKinds.Created, action, null ) ).ConfigureAwait( false );
+				await PublishAsync( CountryCategoryChange( stored.Code, category, ChangeKinds.Created, action ) ).ConfigureAwait( false );
 
 			return country;
 		}
@@ -523,8 +523,6 @@ namespace Pug.Sal
 				throw new DuplicateEntryException( ChangeEntityTypes.Category, stored.Code );
 			}
 
-			await PublishAsync( CategoryChange( stored.Code, ChangeKinds.Created, action ) ).ConfigureAwait( false );
-
 			return category;
 		}
 
@@ -544,8 +542,6 @@ namespace Pug.Sal
 											}
 										)
 										.ConfigureAwait( false );
-
-			await PublishAsync( CategoryChange( stored.Code, ChangeKinds.Updated, written.Performed ) ).ConfigureAwait( false );
 
 			return written.Value;
 		}
@@ -575,9 +571,6 @@ namespace Pug.Sal
 											}
 										)
 										.ConfigureAwait( false );
-
-			await PublishAsync( CategoryChange( code, retire ? ChangeKinds.Retired : ChangeKinds.Reinstated, written.Performed ) )
-				.ConfigureAwait( false );
 
 			return written.Value;
 		}
@@ -624,7 +617,7 @@ namespace Pug.Sal
 												)
 												.ConfigureAwait( false );
 
-			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Created, written.Performed, null ) ).ConfigureAwait( false );
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Created, written.Performed ) ).ConfigureAwait( false );
 
 			return written.Versioned();
 		}
@@ -659,7 +652,7 @@ namespace Pug.Sal
 												)
 												.ConfigureAwait( false );
 
-			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Deleted, written.Performed, null ) ).ConfigureAwait( false );
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Deleted, written.Performed ) ).ConfigureAwait( false );
 
 			return written.Performed.Timestamp;
 		}
@@ -672,16 +665,21 @@ namespace Pug.Sal
 			string categoryCode = RequiredCategory( category, nameof(category) );
 			string? replacementCode = OptionalCode( replacement );
 
-			Versioned<CountryCategory?> current = await ReadVersionedAsync( code, ( session, _ ) => session.GetCountryCategoryAsync( code, categoryCode ) )
-													.ConfigureAwait( false );
+			Versioned<(CountryCategory? Category, bool Held)> current = await ReadVersionedAsync(
+																			code,
+																			async ( session, _ ) =>
+																				( await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ),
+																				await session.HasLocalitiesAsync( code, categoryCode ).ConfigureAwait( false ) ) )
+																		.ConfigureAwait( false );
 
-			if( current.Value is null )
+			if( current.Value.Category is null )
 				throw new UnknownCategoryException( code, categoryCode );
 
-			if( current.Value.Disabled is not null && replacementCode is null )
-				return new Versioned<CountryCategory> { Value = current.Value, DatasetVersion = current.DatasetVersion };
+			// A disabled category changes only when a replacement has localities to move.
+			if( current.Value.Category.Disabled is not null && ( replacementCode is null || !current.Value.Held ) )
+				return new Versioned<CountryCategory> { Value = current.Value.Category, DatasetVersion = current.DatasetVersion };
 
-			Written<CountryCategory> written = await WriteAsync(
+			Written<(CountryCategory Category, bool Disabled, int Moved)> written = await WriteAsync(
 													code,
 													async ( session, action ) =>
 													{
@@ -711,19 +709,37 @@ namespace Pug.Sal
 															await session.SetCountryCategoryDisabledAsync( code, categoryCode, action.Timestamp, action )
 																		.ConfigureAwait( false );
 
-														if( replacementCode is not null )
-															await session.ReplaceLocalityCategoryAsync( code, categoryCode, replacementCode, action )
-																		.ConfigureAwait( false );
+														int moved = replacementCode is null
+																		? 0
+																		: await session.ReplaceLocalityCategoryAsync( code, categoryCode, replacementCode, action )
+																					.ConfigureAwait( false );
 
-														return ( await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) )!;
+														return ( ( await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) )!,
+																assigned.Disabled is null, moved );
 													}
 												)
 												.ConfigureAwait( false );
 
-			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Retired, written.Performed, replacementCode ) )
-				.ConfigureAwait( false );
+			if( written.Value.Disabled )
+				await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Retired, written.Performed ) ).ConfigureAwait( false );
 
-			return written.Versioned();
+			// Moved localities publish one replacement event, not a change each (D28).
+			if( written.Value.Moved > 0 )
+			{
+				CategoryReplacement moved = new()
+				{
+					Country = code,
+					Category = categoryCode,
+					Replacement = replacementCode!,
+					Localities = written.Value.Moved,
+					DatasetVersion = written.Performed.Timestamp,
+					Performed = written.Performed
+				};
+
+				await PublishAsync( publisher => publisher.PublishCategoryReplacementAsync( moved ), code ).ConfigureAwait( false );
+			}
+
+			return new Versioned<CountryCategory> { Value = written.Value.Category, DatasetVersion = written.Performed.Timestamp };
 		}
 
 		public async Task<Versioned<CountryCategory>> EnableCategoryAsync( string country, string category )
@@ -756,7 +772,7 @@ namespace Pug.Sal
 												)
 												.ConfigureAwait( false );
 
-			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Reinstated, written.Performed, null ) )
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Reinstated, written.Performed ) )
 				.ConfigureAwait( false );
 
 			return written.Versioned();
@@ -868,18 +884,13 @@ namespace Pug.Sal
 				Subdivision = locality.Subdivision, Postcode = locality.Postcode, Category = locality.Category
 			};
 
-		// A global category belongs to no country.
-		private static LocalityChange CategoryChange( string category, string kind, ActionContext<Reference> performed ) =>
-			Change( null, ChangeEntityTypes.Category, category, kind, performed );
+		private static LocalityChange CountryCategoryChange( string country, string category, string kind, ActionContext<Reference> performed ) =>
+			Change( country, ChangeEntityTypes.CountryCategory, category, kind, performed );
 
-		private static LocalityChange CountryCategoryChange( string country, string category, string kind, ActionContext<Reference> performed,
-															string? replacement ) =>
-			Change( country, ChangeEntityTypes.CountryCategory, category, kind, performed ) with { Replacement = replacement! };
-
-		private static LocalityChange Change( string? country, string entityType, string key, string kind, ActionContext<Reference> performed ) =>
+		private static LocalityChange Change( string country, string entityType, string key, string kind, ActionContext<Reference> performed ) =>
 			new()
 			{
-				Country = country!,
+				Country = country,
 				EntityType = entityType,
 				Key = key,
 				Kind = kind,
@@ -888,7 +899,7 @@ namespace Pug.Sal
 			};
 
 		private Task PublishAsync( LocalityChange change ) =>
-			PublishAsync( publisher => publisher.PublishAsync( change ), change.Country ?? change.Key );
+			PublishAsync( publisher => publisher.PublishAsync( change ), change.Country );
 
 		// After commit and best-effort: a publisher failure is logged, never thrown (D7).
 		private async Task PublishAsync( Func<ILocalityChangeEventPublisher, Task> publish, string country )

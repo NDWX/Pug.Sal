@@ -9,7 +9,8 @@ namespace Pug.Sal.Models
 
 		public const string Locality = "LOCALITY";
 
-		// A global category (LocalityChange.Country is null).
+		// A global category. Only DuplicateEntryException names it: changes to the global category
+		// list publish no LocalityChange (DECISIONS D28).
 		public const string Category = "CATEGORY";
 
 		// A category's assignment to a country: CREATED when assigned, DELETED when unassigned,

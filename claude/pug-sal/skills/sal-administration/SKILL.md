@@ -46,10 +46,10 @@ These are all checked on the `COUNTRY` resource. **The global category list is c
 
 ## Categories
 
-- **Global categories** are created (`CreateCategoryAsync`), renamed (`UpdateCategoryAsync`), retired and reinstated, never deleted. A retired category can't be newly assigned, or enabled again in a country; countries that have it keep it. Global changes bump no country's version, and publish a `LocalityChange` with `EntityType = CATEGORY` and a null `Country`.
+- **Global categories** are created (`CreateCategoryAsync`), renamed (`UpdateCategoryAsync`), retired and reinstated, never deleted. A retired category can't be newly assigned, or enabled again in a country; countries that have it keep it. Global changes bump no country's version, and publish no event.
 - **A country's categories** (`GetCountryCategoriesAsync`, each with the global `Name` and `Disabled`) are country writes, versioned and published like any other (`EntityType = COUNTRY_CATEGORY`):
   - `AssignCategoryAsync( country, category )`: assigns a current global category, enabled. Assigning one already assigned changes nothing.
-  - `DisableCategoryAsync( country, category, replacement? )`: new localities and import rows can no longer use it. **With a replacement** (another enabled category of the country), every locality holding it, retired ones included, moves to the replacement in the same write, with `LastUpdate` re-stamped. Without one, they keep the disabled category; call again with a replacement later to move them.
+  - `DisableCategoryAsync( country, category, replacement? )`: new localities and import rows can no longer use it. **With a replacement** (another enabled category of the country), every locality holding it, retired ones included, moves to the replacement in the same write, with `LastUpdate` re-stamped, and one `CategoryReplacement` event (with the count moved) is published instead of a change per locality; nothing is published for a replacement that moves nothing. Without one, they keep the disabled category; call again with a replacement later to move them.
   - `EnableCategoryAsync( country, category )`: refused when the global category is retired.
   - `UnassignCategoryAsync( country, category )`: only while no locality of the country holds it.
   - **A country keeps at least one enabled category:** disabling or unassigning the last one is refused with `CountryConfigurationException` (409).

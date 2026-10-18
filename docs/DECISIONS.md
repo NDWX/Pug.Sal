@@ -874,15 +874,23 @@ assistant's choices.
     to have it.
   - **Answers:** `Match` and `Suggestions` carry each locality's category.
 - **Change events:**
-  - **Global category changes:** they publish a `LocalityChange` with `EntityType = CATEGORY`,
-    `Country` null and `DatasetVersion` equal to the action timestamp.
+  - **Global category changes publish nothing** (user directive, 2026-10-18).
+    `ChangeEntityTypes.CATEGORY` remains only to name a duplicate global category in
+    `DuplicateEntryException`.
   - **Assignments:** they publish `EntityType = COUNTRY_CATEGORY` with `Key` = the category code.
     The kind is `CREATED` for an assignment (each first category of a new country included),
-    `DELETED` for an unassignment, `RETIRED` for a disable and `REINSTATED` for an enable. A disable
-    with a replacement sets `Replacement`.
+    `DELETED` for an unassignment, `RETIRED` when a category is disabled and `REINSTATED` for an
+    enable.
   - **Locality changes:** they carry the locality's `Category`.
-  - **Moved localities:** like an import's rows, the localities moved by a replacement publish no
-    change of their own.
+  - **Moved localities: a new event type** (user directive, 2026-10-18). When a disable's replacement
+    moves at least one locality, `ILocalityChangeEventPublisher.PublishCategoryReplacementAsync`
+    publishes one `CategoryReplacement` (`Country`, `Category`, `Replacement`, `Localities` moved,
+    `DatasetVersion`, `Performed`). Like an import's rows, the moved localities publish no change of
+    their own. A replacement that moves nothing publishes no `CategoryReplacement`.
+  - **Assistant's choices that follow:** a disable with a replacement publishes the
+    `COUNTRY_CATEGORY` `RETIRED` change only when it disables the category now. A disabled category
+    given again with a replacement that has nothing to move changes nothing: no version bump and no
+    event.
 - **Schema:** version 1 is rewritten *(user)*:
   - **New tables:** `category`, and `countryCategory` (primary key `(country, category)`).
   - **New columns:** `locality.category` is not null, indexed by `ixLocalityCategory (country,

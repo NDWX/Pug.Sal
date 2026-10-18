@@ -546,9 +546,8 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.Equal( "Hamlet", ( await _admin.GetCategoryAsync( code ) ).Definition.Name );
 		Assert.Contains( await _admin.GetCategoriesAsync(), c => c.Definition.Code == code );
 
-		LocalityChange[] changes = _eventPublisher.Changes.Where( c => c.EntityType == ChangeEntityTypes.Category && c.Key == code ).ToArray();
-		Assert.Equal( new[] { ChangeKinds.Created, ChangeKinds.Updated, ChangeKinds.Retired, ChangeKinds.Reinstated }, changes.Select( c => c.Kind ) );
-		Assert.All( changes, c => Assert.Null( c.Country ) );
+		// Changes to the global list publish nothing (D28).
+		Assert.Empty( _eventPublisher.Changes );
 
 		DuplicateEntryException duplicate = await Assert.ThrowsAsync<DuplicateEntryException>(
 			() => _admin.CreateCategoryAsync( new CategoryDefinition { Code = code, Name = "Again" } ) );
@@ -694,20 +693,48 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.Equal( disabled.DatasetVersion, disabled.Value.Disabled );
 		Assert.Empty( ( await _admin.GetLocalitiesAsync( code, category: "TOWN", includeRetired: true ) ).Value );
 
+		// The disable is a country category change; the moved localities are one replacement event.
 		LocalityChange change = ChangesOf( code ).Last();
-		Assert.Equal( ( ChangeEntityTypes.CountryCategory, "TOWN", ChangeKinds.Retired, "SUBURB", disabled.DatasetVersion ),
-					( change.EntityType, change.Key, change.Kind, change.Replacement, change.DatasetVersion ) );
+		CategoryReplacement replacement = Assert.Single( _eventPublisher.Replacements );
+
+		Assert.Equal( ( ChangeEntityTypes.CountryCategory, "TOWN", ChangeKinds.Retired, disabled.DatasetVersion ),
+					( change.EntityType, change.Key, change.Kind, change.DatasetVersion ) );
+		Assert.Equal( ( code, "TOWN", "SUBURB", 2, disabled.DatasetVersion, disabled.DatasetVersion, "alice" ),
+					( replacement.Country, replacement.Category, replacement.Replacement, replacement.Localities, replacement.DatasetVersion,
+						replacement.Performed.Timestamp, replacement.Performed.Actor.Identifier ) );
 
 		// The replacement must be enabled; a disabled category can be given again to move what
-		// still holds it.
+		// still holds it, and with nothing left to move it changes nothing.
 		await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "SUBURB", "TOWN" ) );
 		await _admin.EnableCategoryAsync( code, "TOWN" );
 		await _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2011", "Potts Point", "TOWN" ) );
 		await _admin.DisableCategoryAsync( code, "TOWN" );
+		int changes = ChangesOf( code ).Length;
 		Versioned<CountryCategory> moved = await _admin.DisableCategoryAsync( code, "TOWN", "SUBURB" );
+		Versioned<CountryCategory> nothingToMove = await _admin.DisableCategoryAsync( code, "TOWN", "SUBURB" );
 
 		Assert.True( moved.DatasetVersion > moved.Value.Disabled );
 		Assert.Equal( "SUBURB", ( await _admin.GetLocalityAsync( code, "NSW", "2011", "Potts Point" ) ).Value.Definition.Category );
+		Assert.Equal( changes, ChangesOf( code ).Length );
+		Assert.Equal( new[] { 2, 1 }, _eventPublisher.Replacements.Select( r => r.Localities ) );
+		Assert.Equal( moved.DatasetVersion, nothingToMove.DatasetVersion );
+		Assert.Equal( moved.DatasetVersion, await VersionAsync( code ) );
+	}
+
+	[Fact]
+	public async Task AReplacementThatMovesNothingPublishesNoReplacement()
+	{
+		string code = await SeedAsync();
+		string unused = NewCategory();
+
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = unused, Name = "Unused" } );
+		await _admin.AssignCategoryAsync( code, unused );
+
+		Versioned<CountryCategory> disabled = await _admin.DisableCategoryAsync( code, unused, "TOWN" );
+
+		Assert.Equal( disabled.DatasetVersion, disabled.Value.Disabled );
+		Assert.Equal( ( unused, ChangeKinds.Retired ), ( ChangesOf( code ).Last().Key, ChangesOf( code ).Last().Kind ) );
+		Assert.Empty( _eventPublisher.Replacements );
 	}
 
 	[Fact]

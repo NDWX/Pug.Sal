@@ -232,16 +232,26 @@ record("ImportRun",
 	], S + E)
 
 record("LocalityChange",
-	"A committed register, update, retire, reinstate or delete made through the admin API (an assignment or unassignment of a country category included), published to the host's ILocalityChangeEventPublisher for audit. An import is a different event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.",
+	"A committed register, update, retire, reinstate or delete made through the admin API (a country category's assignment, unassignment, disabling and enabling included; changes to the global category list publish nothing), published to the host's ILocalityChangeEventPublisher for audit. An import is a different event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.",
 	[
-		("string", "Country", False, "Null for a global category change; the country otherwise."),
+		("string", "Country", True, None),
 		("string", "EntityType", True, "One of ChangeEntityTypes."),
 		("string", "Subdivision", False, "For a locality change, the locality's subdivision code (null in countries without subdivisions); null otherwise."),
 		("string", "Postcode", False, "For a locality change, the locality's postcode (null when it has none); null otherwise."),
 		("string", "Category", False, "For a locality change, the locality's category code; null otherwise."),
-		("string", "Key", True, "Per EntityType: the country code, the subdivision code, the locality name, or the category code."),
-		("string", "Replacement", False, "For a country category disabled with a replacement, the category its localities were moved to; null otherwise."),
+		("string", "Key", True, "Per EntityType: the country code, the subdivision code, the locality name, or the country category's code."),
 		("string", "Kind", True, "One of ChangeKinds."),
 		("ActionContext<Reference>", "Performed", True, None),
-		("DateTime", "DatasetVersion", True, "UTC country dataset version the change produced; for a global category change, which has no country, the change's timestamp."),
+		("DateTime", "DatasetVersion", True, "UTC country dataset version the change produced."),
+	], S + E)
+
+record("CategoryReplacement",
+	"The localities of one country moved from a category to its replacement by ILocalityAdministration.DisableCategoryAsync. It is the replacement's event: after commit it is published through ILocalityChangeEventPublisher.PublishCategoryReplacementAsync, only when at least one locality moved; the moved localities publish no LocalityChange (DECISIONS D28).",
+	[
+		("string", "Country", True, None),
+		("string", "Category", True, "The disabled category the localities held."),
+		("string", "Replacement", True, "The category they hold now."),
+		("int", "Localities", True, "How many localities moved, retired ones included; at least one."),
+		("DateTime", "DatasetVersion", True, "UTC country dataset version the replacement produced, and the timestamp of Performed and of each moved locality's LastUpdate."),
+		("ActionContext<Reference>", "Performed", True, None),
 	], S + E)

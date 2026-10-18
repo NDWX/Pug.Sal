@@ -13,5 +13,9 @@ namespace Pug.Sal.Abstractions
 
 		// One completed import, with its counts; published instead of any per-row change.
 		Task PublishImportAsync( ImportRun run );
+
+		// The localities a disabled category's replacement moved (DECISIONS D28), published only when
+		// at least one moved, instead of any per-locality change.
+		Task PublishCategoryReplacementAsync( CategoryReplacement replacement );
 	}
 }

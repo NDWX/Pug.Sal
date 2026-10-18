@@ -31,4 +31,13 @@ public sealed class RecordingEventPublisher : ILocalityChangeEventPublisher
 
 		return _fail ? Task.FromException( new InvalidOperationException( "Broker down" ) ) : Task.CompletedTask;
 	}
+
+	public ConcurrentQueue<CategoryReplacement> Replacements { get; } = new();
+
+	public Task PublishCategoryReplacementAsync( CategoryReplacement replacement )
+	{
+		Replacements.Enqueue( replacement );
+
+		return _fail ? Task.FromException( new InvalidOperationException( "Broker down" ) ) : Task.CompletedTask;
+	}
 }

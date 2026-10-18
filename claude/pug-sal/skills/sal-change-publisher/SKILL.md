@@ -12,24 +12,25 @@ public interface ILocalityChangeEventPublisher
 {
 	Task PublishAsync( LocalityChange change );   // one admin write
 	Task PublishImportAsync( ImportRun run );     // one completed import, instead of per-row changes
+	Task PublishCategoryReplacementAsync( CategoryReplacement replacement );   // localities moved by a category's replacement
 }
 ```
 
 ## What is published
 
-- **`PublishAsync( LocalityChange )`** is called once for each create, update, retire, reinstate or delete made through `ILocalityAdministration`, on a country, subdivision, locality, global category or country category (DECISIONS D28). The fields:
-  - `Country`, **null for a global category change** (`EntityType = CATEGORY`), which belongs to no country;
-  - `EntityType` (`ChangeEntityTypes`): `COUNTRY`, `SUBDIVISION`, `LOCALITY`, `CATEGORY` or `COUNTRY_CATEGORY`;
+- **`PublishAsync( LocalityChange )`** is called once for each create, update, retire, reinstate or delete made through `ILocalityAdministration`, on a country, subdivision, locality or country category (DECISIONS D28). **Changes to the global category list publish nothing.** The fields:
+  - `Country`;
+  - `EntityType` (`ChangeEntityTypes`): `COUNTRY`, `SUBDIVISION`, `LOCALITY` or `COUNTRY_CATEGORY`;
   - `Key`, which is the country code, the subdivision code, the locality name or the category code, depending on `EntityType`;
   - for a locality, `Subdivision`, `Postcode` and `Category`;
   - `Kind` (`ChangeKinds`). For a country category it is `CREATED` (assigned, including each first category of a new country), `DELETED` (unassigned), `RETIRED` (disabled) or `REINSTATED` (enabled);
-  - `Replacement`, for a country category disabled with a replacement: the category its localities moved to. **The moved localities publish no change of their own**, as an import's rows don't;
   - `Performed`, an `ActionContext<Reference>` holding who and when;
-  - `DatasetVersion`, the country version the write produced; for a global category change, its timestamp.
+  - `DatasetVersion`, the country version the write produced.
 - **`PublishImportAsync( ImportRun )`** is called once per import, with the stored run as the payload: identifier, country, importer, source, `Added`, `Reinstated`, `Recategorized`, `Deleted`, `Unchanged`, `DatasetVersion` and `Performed`. **An import publishes no `LocalityChange` for its rows.** A consumer that needs row-level detail re-reads the country at the new `DatasetVersion`.
+- **`PublishCategoryReplacementAsync( CategoryReplacement )`** is called once when `DisableCategoryAsync` with a replacement moves at least one locality: `Country`, `Category` (the disabled one), `Replacement`, `Localities` (how many moved, retired ones included), `DatasetVersion` and `Performed`. **The moved localities publish no `LocalityChange` of their own**, as an import's rows don't. The disable itself, when it disables the category now, is also a `COUNTRY_CATEGORY` `RETIRED` change, published first. A replacement that moves nothing publishes no `CategoryReplacement`.
 - **Reads publish nothing.**
 
-`DatasetVersion` strictly increases per country. Partition by `Country ?? Key` if your broker needs a key for every event. Consumers use it to order events and to discard stale ones, and a cache keyed by country version can be invalidated with it. Events for different countries are unordered relative to one another.
+`DatasetVersion` strictly increases per country. Consumers use it to order events and to discard stale ones, and a cache keyed by country version can be invalidated with it. Events for different countries are unordered relative to one another.
 
 ## Delivery guarantees, and what follows from them
 
@@ -45,7 +46,7 @@ Publishing is **after commit and best-effort**:
 - **Never throw to signal anything.** Sal ignores it. Log inside the publisher if you want better diagnostics than Sal's warning.
 - **Don't call back into Sal** from inside the publisher, and don't write to the store.
 - **It is a singleton.** It must be thread-safe, because concurrent writes publish concurrently. If it needs a scoped service (a `DbContext` for an outbox, for example), inject `IServiceScopeFactory` and create a scope for each call.
-- **Serialize the records as they are.** `LocalityChange` and `ImportRun` are `[DataContract]` records in `Pug.Sal.Models`, so consumers can reference that package to deserialize them. Don't invent a parallel schema unless the broker's consumers can't take a .NET dependency.
+- **Serialize the records as they are.** `LocalityChange`, `ImportRun` and `CategoryReplacement` are `[DataContract]` records in `Pug.Sal.Models`, so consumers can reference that package to deserialize them. Don't invent a parallel schema unless the broker's consumers can't take a .NET dependency.
 
 ## Implementing and registering
 
@@ -59,10 +60,13 @@ public sealed class ServiceBusChangePublisher : ILocalityChangeEventPublisher
 	public ServiceBusChangePublisher( ServiceBusSender sender ) => _sender = sender;
 
 	public Task PublishAsync( LocalityChange change ) =>
-		_sender.SendMessageAsync( Message( "locality-change", change.Country ?? change.Key, change ) );   // global category changes have no country
+		_sender.SendMessageAsync( Message( "locality-change", change.Country, change ) );
 
 	public Task PublishImportAsync( ImportRun run ) =>
 		_sender.SendMessageAsync( Message( "import-run", run.Country, run ) );
+
+	public Task PublishCategoryReplacementAsync( CategoryReplacement replacement ) =>
+		_sender.SendMessageAsync( Message( "category-replacement", replacement.Country, replacement ) );
 
 	// Body = JSON of the record, Subject = event type, SessionId/partition key = country (ordering).
 	private static ServiceBusMessage Message<T>( string type, string country, T body ) => /* ... */;
@@ -73,4 +77,4 @@ services.AddSalChangePublisher<ServiceBusChangePublisher>();   // replaces the n
 
 ## Testing
 
-Check that it formats both event types correctly, and that it behaves when the broker fails: no unbounded wait, and the failure is logged. Sal's own guarantee that a failing publisher never fails the write is already covered by `APublisherFailureNeverFailsTheWrite` in Sal's contract suite. `tests/Pug.Sal.Tests/Infrastructure/RecordingEventPublisher.cs` is a minimal publisher to copy into a host's tests.
+Check that it formats all three event types correctly, and that it behaves when the broker fails: no unbounded wait, and the failure is logged. Sal's own guarantee that a failing publisher never fails the write is already covered by `APublisherFailureNeverFailsTheWrite` in Sal's contract suite. `tests/Pug.Sal.Tests/Infrastructure/RecordingEventPublisher.cs` is a minimal publisher to copy into a host's tests.

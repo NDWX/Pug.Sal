@@ -88,7 +88,9 @@ update the skill in the same commit.
 - **Change events:** published after commit and best-effort. A publisher failure never fails or
   rolls back a write. Admin writes publish a `LocalityChange`. An import publishes only its
   `ImportRun` (counts included) through `PublishImportAsync`: a different event, not per-row
-  changes.
+  changes. A disable whose replacement moved localities also publishes one `CategoryReplacement`
+  through `PublishCategoryReplacementAsync`, again not per-locality changes. Changes to the global
+  category list publish nothing (D28).
 - **Licensing** of datasets is the host's concern. Sal has no licence model.
 - **Territory placement** (e.g. whether AU external territories are their own countries or under
   AU) is the data maintainer's choice. Subdivision codes are maintainer-defined and keyed with

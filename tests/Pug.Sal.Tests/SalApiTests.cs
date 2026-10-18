@@ -256,8 +256,8 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Assert.NotNull( ( await _admin.GetCategoryAsync( "VILLAGE" ) ).Retired );
 		Assert.NotNull( retired.Retired );
 		Assert.Null( ( await _admin.ReinstateCategoryAsync( "VILLAGE" ) ).Retired );
-		Assert.Contains( _fixture.EventPublisher.Changes,
-						c => c.Country == code && c.EntityType == ChangeEntityTypes.CountryCategory && c.Replacement == "TOWN" );
+		Assert.Contains( _fixture.EventPublisher.Replacements,
+						r => r.Country == code && ( r.Category, r.Replacement, r.Localities ) == ( "VILLAGE", "TOWN", 1 ) );
 
 		UnknownCategoryException global = await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.GetCategoryAsync( "NOPE" ) );
 		UnknownCategoryException unassignedCategory = await Assert.ThrowsAsync<UnknownCategoryException>(

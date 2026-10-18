@@ -11,5 +11,7 @@ namespace Pug.Sal
 		public Task PublishAsync( LocalityChange change ) => Task.CompletedTask;
 
 		public Task PublishImportAsync( ImportRun run ) => Task.CompletedTask;
+
+		public Task PublishCategoryReplacementAsync( CategoryReplacement replacement ) => Task.CompletedTask;
 	}
 }

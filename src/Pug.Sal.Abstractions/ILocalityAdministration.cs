@@ -23,7 +23,8 @@ namespace Pug.Sal.Abstractions
 	//
 	// Every write commits together with a bump of the country's dataset version, returns the
 	// written record with that version, and is then published to the host's
-	// ILocalityChangeEventPublisher, as a LocalityChange or, for an import, as its ImportRun. Countries
+	// ILocalityChangeEventPublisher, as a LocalityChange or, for an import, as its ImportRun (a
+	// category replacement also publishes a CategoryReplacement; see DisableCategoryAsync). Countries
 	// and subdivisions are only ever retired, which is reversible; localities may also be deleted,
 	// by an administrator or by an import. Retiring a retired record, or reinstating a current one,
 	// changes nothing: it returns the record as it is, bumps nothing and publishes nothing.
@@ -36,8 +37,7 @@ namespace Pug.Sal.Abstractions
 	// changes.
 	//
 	// Global categories (DECISIONS D28) are created, updated, retired and reinstated, never
-	// deleted; their writes bump no country's version and publish a LocalityChange with a null
-	// Country. A category is assigned to a country before its localities can use it; a country
+	// deleted; their writes bump no country's version and publish nothing. A category is assigned to a country before its localities can use it; a country
 	// always has at least one enabled category.
 	public interface ILocalityAdministration
 	{
@@ -204,12 +204,13 @@ namespace Pug.Sal.Abstractions
 		// Requires RETIRE. Disables the category in the country: localities can no longer be created
 		// or imported under it. With a replacement (another enabled category of the country), every
 		// locality of the country with the category, retired ones included, moves to it in the
-		// same transaction, its LastUpdate re-stamped; without one, they keep the disabled
-		// category. Refused with CountryConfigurationException when it would leave the country
+		// same transaction, its LastUpdate re-stamped, and when any moved, one CategoryReplacement
+		// is published (through PublishCategoryReplacementAsync, not a LocalityChange each);
+		// without one, they keep the disabled category. Refused with CountryConfigurationException when it would leave the country
 		// without an enabled category, and with ArgumentException when the replacement is the
 		// category itself or disabled. Disabling a disabled
-		// category without a replacement changes nothing; with one, it moves the localities still
-		// holding it. Throws UnknownCountryException or UnknownCategoryException.
+		// category without a replacement, or with one but no locality holding it, changes nothing;
+		// with one, it moves the localities still holding it. Throws UnknownCountryException or UnknownCategoryException.
 		Task<Versioned<CountryCategory>> DisableCategoryAsync( string country, string category, string replacement = null );
 
 		// Requires RETIRE. Refused (ArgumentException) when the global category is retired. Throws
