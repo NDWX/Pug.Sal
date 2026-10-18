@@ -12,7 +12,7 @@ namespace Pug.Sal.WebApi
 	// - AccessDeniedException -> 403 (only that type: any other UnauthorizedAccessException is a
 	//   server fault, D25);
 	// - Unknown{Country,Subdivision,Locality,Category}Exception -> 404 with a FailureInfo;
-	// - DuplicateEntryException -> 409 with a FailureInfo;
+	// - DuplicateEntryException, CountryConfigurationException -> 409 with a FailureInfo;
 	// - UnknownDatasetImporterException, DatasetImportException -> 422 with a FailureInfo;
 	// - ArgumentException -> 400 with a BadRequestResultInfo.
 	internal static class SalResults
@@ -58,6 +58,10 @@ namespace Pug.Sal.WebApi
 				{
 					EntityType = exception.EntityType, Key = exception.Key
 				} );
+			}
+			catch( CountryConfigurationException exception )
+			{
+				return Results.Conflict( Failure( FailureTypes.CountryConfiguration, exception ) with { Country = exception.Country } );
 			}
 			catch( UnknownDatasetImporterException exception )
 			{

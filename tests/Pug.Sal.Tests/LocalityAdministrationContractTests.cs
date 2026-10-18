@@ -636,7 +636,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 
 		// SUBURB is unused but, once TOWN is disabled, the only enabled category.
 		await _admin.DisableCategoryAsync( code, "TOWN" );
-		await Assert.ThrowsAsync<ArgumentException>( () => _admin.UnassignCategoryAsync( code, "SUBURB" ) );
+		Assert.Equal( code, ( await Assert.ThrowsAsync<CountryConfigurationException>( () => _admin.UnassignCategoryAsync( code, "SUBURB" ) ) ).Country );
 
 		Assert.Equal( new[] { ( ChangeKinds.Created, extra ), ( ChangeKinds.Deleted, extra ), ( ChangeKinds.Retired, "TOWN" ) },
 					ChangesOf( code ).Where( c => c.EntityType == ChangeEntityTypes.CountryCategory && c.Performed.Timestamp > assigned.DatasetVersion.AddTicks( -1 ) )
@@ -657,11 +657,13 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.Equal( new[] { "Hume=TOWN", "Sydney=TOWN" }, CategoriesOf( ( await _admin.GetLocalitiesAsync( code, includeRetired: true ) ).Value ) );
 
 		ArgumentException refused = await Assert.ThrowsAsync<ArgumentException>( () => _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2001", "Haymarket" ) ) );
-		ArgumentException last = await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "SUBURB" ) );
+		CountryConfigurationException last = await Assert.ThrowsAsync<CountryConfigurationException>( () => _admin.DisableCategoryAsync( code, "SUBURB" ) );
 		await Assert.ThrowsAsync<DatasetImportException>( () => ImportAsync( code, "NSW,2000,Sydney" ) );
 
 		Assert.Contains( "disabled", refused.Message );
 		Assert.Contains( "at least one enabled category", last.Message );
+		Assert.Equal( code, last.Country );
+		Assert.Null( ( await _admin.GetCountryCategoriesAsync( code ) ).Value.Single( c => c.Category == "SUBURB" ).Disabled );
 
 		Versioned<CountryCategory> enabled = await _admin.EnableCategoryAsync( code, "TOWN" );
 		Versioned<CountryCategory> stillEnabled = await _admin.EnableCategoryAsync( code, "TOWN" );

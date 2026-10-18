@@ -18,6 +18,9 @@ namespace Pug.Sal.WebApi.Models
 		// 409.
 		public const string DuplicateEntry = "DUPLICATE_ENTRY";
 
+		// 409: the write would leave the country in a configuration Sal refuses (Country set).
+		public const string CountryConfiguration = "COUNTRY_CONFIGURATION";
+
 		// 422.
 		public const string UnknownImporter = "UNKNOWN_IMPORTER";
 

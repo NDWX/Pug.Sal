@@ -5,6 +5,7 @@ namespace Pug.Sal.WebApi.Models
 {
 	// Body of a 404, 409 or 422 response: which domain failure occurred and what it concerned.
 	// Pug.Sal.Client rebuilds the facade's exception from it (Unknown*Exception, UnknownCategoryException, DuplicateEntryException,
+	// CountryConfigurationException,
 	// UnknownDatasetImporterException, DatasetImportException). Only the members its Type uses are set.
 	[DataContract]
 	public record FailureInfo

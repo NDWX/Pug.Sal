@@ -194,18 +194,20 @@ namespace Pug.Sal.Abstractions
 		// a retired one.
 		Task<Versioned<CountryCategory>> AssignCategoryAsync( string country, string category );
 
-		// Requires MODIFY. Removes the assignment. Refused (ArgumentException) when any locality of
-		// the country has the category, retired ones included, or when it would leave the country
-		// without an enabled category. Returns the dataset version produced. Throws
-		// UnknownCountryException or UnknownCategoryException.
+		// Requires MODIFY. Removes the assignment. Refused with ArgumentException when any locality
+		// of the country has the category, retired ones included, and with
+		// CountryConfigurationException when it would leave the country without an enabled category.
+		// Returns the dataset version produced. Throws UnknownCountryException or
+		// UnknownCategoryException.
 		Task<DateTime> UnassignCategoryAsync( string country, string category );
 
 		// Requires RETIRE. Disables the category in the country: localities can no longer be created
 		// or imported under it. With a replacement (another enabled category of the country), every
 		// locality of the country with the category, retired ones included, moves to it in the
 		// same transaction, its LastUpdate re-stamped; without one, they keep the disabled
-		// category. Refused (ArgumentException) when it would leave the country without an enabled
-		// category, or the replacement is the category itself or disabled. Disabling a disabled
+		// category. Refused with CountryConfigurationException when it would leave the country
+		// without an enabled category, and with ArgumentException when the replacement is the
+		// category itself or disabled. Disabling a disabled
 		// category without a replacement changes nothing; with one, it moves the localities still
 		// holding it. Throws UnknownCountryException or UnknownCategoryException.
 		Task<Versioned<CountryCategory>> DisableCategoryAsync( string country, string category, string replacement = null );

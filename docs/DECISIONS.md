@@ -825,12 +825,17 @@ assistant's choices.
     | Operation | Checked as | Effect |
     |---|---|---|
     | `AssignCategoryAsync` | `MODIFY` | Assigns a current global category. Assigning one already assigned changes nothing. |
-    | `UnassignCategoryAsync` | `MODIFY` | Refused (`ArgumentException`) once any locality of the country, retired ones included, has the category, or when it would leave no enabled category. |
-    | `DisableCategoryAsync( country, category, replacement )` | `RETIRE` | Refused when it would leave no enabled category. With a replacement, which must be another enabled category of the country, every locality of the country with the category moves to the replacement, in the same transaction. A disabled category can be given again with a replacement, to move the localities still holding it. |
+    | `UnassignCategoryAsync` | `MODIFY` | Refused (`ArgumentException`) once any locality of the country, retired ones included, has the category, and (`CountryConfigurationException`) when it would leave no enabled category. |
+    | `DisableCategoryAsync( country, category, replacement )` | `RETIRE` | Refused (`CountryConfigurationException`) when it would leave no enabled category. With a replacement, which must be another enabled category of the country, every locality of the country with the category moves to the replacement, in the same transaction. A disabled category can be given again with a replacement, to move the localities still holding it. |
     | `EnableCategoryAsync` | `RETIRE` | Refused when the global category is retired. |
 
     Disabling a disabled category without a replacement, or enabling an enabled one, changes
     nothing.
+  - **Leaving a country without an enabled category** is refused with
+    `CountryConfigurationException` (user directive, 2026-10-18), sent over HTTP as 409
+    `COUNTRY_CONFIGURATION` with the country. It is a refusal by the country's state, not a bad
+    argument, so it is not an `ArgumentException`. Unassigning the last enabled category breaks the
+    same rule, so it is refused the same way (assistant's choice).
   - **Stored timestamp:** `Disabled` is the action timestamp, and is stored as version text like
     `retired` (D19).
 - **A locality's category is not part of its identity** *(user)*. The key stays `(country,

@@ -65,8 +65,8 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 		{ "SalAdminRetireCategory", new[] { 200, 403, 404 } },
 		{ "SalAdminReinstateCategory", new[] { 200, 403, 404 } },
 		{ "SalAdminAssignCategory", new[] { 200, 400, 403, 404 } },
-		{ "SalAdminUnassignCategory", new[] { 200, 400, 403, 404 } },
-		{ "SalAdminDisableCategory", new[] { 200, 400, 403, 404 } },
+		{ "SalAdminUnassignCategory", new[] { 200, 400, 403, 404, 409 } },
+		{ "SalAdminDisableCategory", new[] { 200, 400, 403, 404, 409 } },
 		{ "SalAdminEnableCategory", new[] { 200, 400, 403, 404 } }
 	};
 

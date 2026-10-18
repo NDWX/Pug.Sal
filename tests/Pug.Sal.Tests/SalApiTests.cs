@@ -262,11 +262,12 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		UnknownCategoryException global = await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.GetCategoryAsync( "NOPE" ) );
 		UnknownCategoryException unassignedCategory = await Assert.ThrowsAsync<UnknownCategoryException>(
 			() => _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1001", Name = "Beta", Category = "SUBURB" } ) );
-		ArgumentException last = await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "TOWN" ) );
+		CountryConfigurationException last = await Assert.ThrowsAsync<CountryConfigurationException>( () => _admin.DisableCategoryAsync( code, "TOWN" ) );
 
 		Assert.Equal( ( (string?)null, "NOPE" ), ( global.Country, global.Category ) );
 		Assert.Equal( ( code, "SUBURB" ), ( unassignedCategory.Country, unassignedCategory.Category ) );
-		Assert.Equal( "category", last.ParamName );
+		Assert.Equal( code, last.Country );
+		Assert.Contains( "at least one enabled category", last.Message );
 	}
 
 	[Fact]

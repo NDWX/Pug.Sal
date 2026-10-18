@@ -23,5 +23,9 @@ namespace Pug.Sal.WebApi
 		// DuplicateEntryException.
 		public static RouteHandlerBuilder Duplicate( this RouteHandlerBuilder endpoint ) =>
 			endpoint.Produces<FailureInfo>( StatusCodes.Status409Conflict );
+
+		// CountryConfigurationException.
+		public static RouteHandlerBuilder Misconfiguring( this RouteHandlerBuilder endpoint ) =>
+			endpoint.Produces<FailureInfo>( StatusCodes.Status409Conflict );
 	}
 }

@@ -52,7 +52,7 @@ These are all checked on the `COUNTRY` resource. **The global category list is c
   - `DisableCategoryAsync( country, category, replacement? )`: new localities and import rows can no longer use it. **With a replacement** (another enabled category of the country), every locality holding it, retired ones included, moves to the replacement in the same write, with `LastUpdate` re-stamped. Without one, they keep the disabled category; call again with a replacement later to move them.
   - `EnableCategoryAsync( country, category )`: refused when the global category is retired.
   - `UnassignCategoryAsync( country, category )`: only while no locality of the country holds it.
-  - **A country keeps at least one enabled category:** disabling or unassigning the last one is refused (`ArgumentException`).
+  - **A country keeps at least one enabled category:** disabling or unassigning the last one is refused with `CountryConfigurationException` (409).
 
 ## Setting up a new country
 
@@ -109,7 +109,8 @@ The same exceptions are thrown in-process and over HTTP:
 | `UnknownCountryException` / `UnknownSubdivisionException` / `UnknownLocalityException` | The record addressed doesn't exist | 404 |
 | `UnknownCategoryException` | The global category doesn't exist (`Country` null), or isn't assigned to the country (`Country` set) | 404 |
 | `DuplicateEntryException` | The code or key already exists, retired or not. Reinstate it instead | 409 |
-| `ArgumentException` | Invalid definition, a postcode failing the country's rules, a blank key part, a disabled or retired category, unassigning a category in use, or leaving a country without an enabled category | 400 |
+| `CountryConfigurationException` | The write would leave the country without an enabled category (`Country` names it) | 409 |
+| `ArgumentException` | Invalid definition, a postcode failing the country's rules, a blank key part, a disabled or retired category, or unassigning a category in use | 400 |
 | `UnknownDatasetImporterException` | `ImportRequest.Importer` isn't registered | 422 |
 | `DatasetImportException` | Unreadable or invalid dataset (see `Position`) | 422 |
 

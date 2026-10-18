@@ -7,7 +7,7 @@ using Pug.Sal.WebApi.Models;
 namespace Pug.Sal.Client
 {
 	// Turns the transport's failures back into the exceptions the Sal facades document, so a caller
-	// cannot tell the HTTP clients from the in-process facades: 403 -> AccessDeniedException (without an Operation: a 403 carries no body); 404, 409 and
+	// cannot tell the HTTP clients from the in-process facades: 403 -> AccessDeniedException (without an Operation: a 403 carries no body); 404, 409 (DuplicateEntryException, CountryConfigurationException) and
 	// 422 -> the exception their FailureInfo body names; 400 -> ArgumentException rebuilt from the
 	// BadRequestResultInfo body. 401 is left as the transport's AuthenticationException: no facade
 	// contract covers "you did not authenticate". A failure without a recognizable body is rethrown
@@ -69,6 +69,9 @@ namespace Pug.Sal.Client
 
 				case FailureTypes.DuplicateEntry:
 					return new DuplicateEntryException( failure.EntityType, failure.Key );
+
+				case FailureTypes.CountryConfiguration:
+					return new CountryConfigurationException( failure.Country, failure.Message ?? string.Empty );
 
 				case FailureTypes.UnknownImporter:
 					return new UnknownDatasetImporterException( failure.Importer );

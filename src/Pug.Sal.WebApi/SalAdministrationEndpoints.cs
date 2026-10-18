@@ -229,13 +229,15 @@ namespace Pug.Sal.WebApi
 					"Unassign a category no locality of the country has; returns the dataset version produced" )
 				.Produces<DatasetVersionResult>()
 				.Invalid()
-				.NotFound();
+				.NotFound()
+				.Misconfiguring();
 
 			Endpoint( surface.MapPost( "countries/{country}/categories/{category}/disable", DisableCategory ), "SalAdminDisableCategory",
 					"Disable a country's category, optionally moving its localities to the replacement category" )
 				.Produces<Versioned<CountryCategory>>()
 				.Invalid()
-				.NotFound();
+				.NotFound()
+				.Misconfiguring();
 
 			Endpoint( surface.MapPost( "countries/{country}/categories/{category}/enable", EnableCategory ), "SalAdminEnableCategory",
 					"Enable a country's disabled category" )

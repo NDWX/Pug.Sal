@@ -780,7 +780,7 @@ namespace Pug.Sal
 			IEnumerable<CountryCategory> enabled = await session.GetCountryCategoriesAsync( country, false ).ConfigureAwait( false );
 
 			if( !enabled.Any( other => other.Category != category ) )
-				throw new ArgumentException( $"Country '{country}' must keep at least one enabled category.", nameof(category) );
+				throw new CountryConfigurationException( country, $"Country '{country}' must keep at least one enabled category." );
 		}
 
 		private static string RequiredCategory( string? category, string parameter ) =>
