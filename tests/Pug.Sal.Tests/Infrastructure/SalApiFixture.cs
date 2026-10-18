@@ -26,8 +26,9 @@ namespace Pug.Sal.Tests.Infrastructure;
 // production DI extensions; only authentication and the security principal are faked. Users:
 // "reader" holds VIEW, "admin" every operation, anyone else nothing.
 //
-// Seeded through the clients themselves: AU (^\d{4}$, postcode required) with NSW, ACT and VIC,
-// and a CSV import of Sydney 2000, Environa 2620 (NSW), Hume 2620 (ACT), St Kilda 3182.
+// Seeded through the clients themselves: global categories SUBURB and TOWN; AU (^\d{4}$, postcode
+// required) with both, and NSW, ACT and VIC; and a CSV import of Sydney 2000 (SUBURB), Environa 2620
+// (NSW, TOWN), Hume 2620 (ACT, SUBURB by the defaultCategory option), St Kilda 3182 (SUBURB).
 public class SalApiFixture : IAsyncLifetime
 {
 	public const string Reader = "reader";
@@ -55,17 +56,22 @@ public class SalApiFixture : IAsyncLifetime
 	{
 		LocalityAdministrationClient admin = AdministrationClient( Admin );
 
+		await admin.CreateCategoryAsync( new CategoryDefinition { Code = "SUBURB", Name = "Suburb" } );
+		await admin.CreateCategoryAsync( new CategoryDefinition { Code = "TOWN", Name = "Town" } );
+
 		await admin.CreateCountryAsync( new CountryDefinition
 		{
-			Code = "AU", Alpha3 = "AUS", Name = "Australia", PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true
+			Code = "AU", Alpha3 = "AUS", Name = "Australia", PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true,
+			Categories = new[] { "SUBURB", "TOWN" }
 		} );
 
 		foreach( ( string code, string name ) in new[] { ( "NSW", "New South Wales" ), ( "ACT", "Australian Capital Territory" ), ( "VIC", "Victoria" ) } )
 			await admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = "AU", Code = code, Name = name } );
 
 		await admin.ImportAsync( "AU",
-			new ImportRequest { Importer = "csv", Source = "seed" },
-			new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality\nNSW,2000,Sydney\nNSW,2620,Environa\nACT,2620,Hume\nVIC,3182,St Kilda\n" ) ) );
+			new ImportRequest { Importer = "csv", Source = "seed", Options = new Dictionary<string, string> { [ "defaultCategory" ] = "SUBURB" } },
+			new MemoryStream( Encoding.UTF8.GetBytes(
+				"subdivision,postcode,locality,category\nNSW,2000,Sydney,SUBURB\nNSW,2620,Environa,TOWN\nACT,2620,Hume,\nVIC,3182,St Kilda,SUBURB\n" ) ) );
 	}
 
 	public async Task DisposeAsync()

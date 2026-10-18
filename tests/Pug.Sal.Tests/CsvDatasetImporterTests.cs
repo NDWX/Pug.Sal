@@ -59,7 +59,24 @@ public class CsvDatasetImporterTests
 	{
 		ImportRow row = Assert.Single( await ReadAsync( "locality\nYaren\n" ) );
 
-		Assert.Equal( ( "Yaren", (string?)null, (string?)null ), ( row.Locality, row.Postcode, row.Subdivision ) );
+		Assert.Equal( ( "Yaren", (string?)null, (string?)null, (string?)null ), ( row.Locality, row.Postcode, row.Subdivision, row.Category ) );
+	}
+
+	[Fact]
+	public async Task CategoriesComeFromTheColumnOrTheDefault()
+	{
+		ImportRow[] column = await ReadAsync( "locality,category\nSydney, SUBURB \nParkes,\n" );
+		ImportRow[] defaulted = await ReadAsync( "locality,category\nSydney,SUBURB\nParkes,\n",
+												new Dictionary<string, string> { [ "defaultCategory" ] = " TOWN " } );
+		ImportRow[] named = await ReadAsync( "locality,kind\nSydney,SUBURB\n", new Dictionary<string, string> { [ "category" ] = "kind" } );
+		ImportRow[] noColumn = await ReadAsync( "locality\nYaren\n", new Dictionary<string, string> { [ "defaultcategory" ] = "TOWN" } );
+
+		Assert.Equal( new[] { "SUBURB", null }, column.Select( r => r.Category ) );
+		Assert.Equal( new[] { "SUBURB", "TOWN" }, defaulted.Select( r => r.Category ) );
+		Assert.Equal( "SUBURB", Assert.Single( named ).Category );
+		Assert.Equal( "TOWN", Assert.Single( noColumn ).Category );
+		await Assert.ThrowsAsync<DatasetImportException>(
+			() => ReadAsync( "locality\nYaren\n", new Dictionary<string, string> { [ "category" ] = "kind" } ) );
 	}
 
 	[Fact]

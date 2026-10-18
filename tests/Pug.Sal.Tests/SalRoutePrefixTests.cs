@@ -49,7 +49,7 @@ public class SalRoutePrefixTests : IClassFixture<PrefixedSalApiFixture>
 		HttpClient admin = _fixture.CreateClient( SalApiFixture.Admin );
 
 		using HttpResponseMessage created = await admin.PostAsJsonAsync( "api/admin/countries",
-										new CountryDefinition { Code = "XP", Name = "Prefixed", HasSubdivisions = false } );
+										new CountryDefinition { Code = "XP", Name = "Prefixed", HasSubdivisions = false, Categories = new[] { "TOWN" } } );
 
 		Assert.Equal( HttpStatusCode.Created, created.StatusCode );
 		Assert.Equal( "/api/admin/countries/XP", created.Headers.Location!.OriginalString );

@@ -31,9 +31,14 @@ namespace Pug.Sal
 												.ToHashSet( StringComparer.Ordinal )
 												: new HashSet<string>();
 
-			IReadOnlyList<Entry> entries = Check( country.Definition, subdivisions, rows );
+			// Assigned categories, by code: whether each is enabled (D28).
+			Dictionary<string, bool> categories = ( await session.GetCountryCategoriesAsync( countryCode, true ).ConfigureAwait( false ) )
+												.ToDictionary( category => category.Category, category => category.Disabled is null,
+																StringComparer.Ordinal );
 
-			int added = 0, reinstated = 0, unchanged = 0;
+			IReadOnlyList<Entry> entries = Check( country.Definition, subdivisions, categories, rows );
+
+			int added = 0, reinstated = 0, recategorized = 0, unchanged = 0;
 
 			foreach( Entry entry in entries )
 			{
@@ -48,6 +53,10 @@ namespace Pug.Sal
 
 					case LocalityUpsertOutcome.Reinstated:
 						reinstated++;
+						break;
+
+					case LocalityUpsertOutcome.Recategorized:
+						recategorized++;
 						break;
 
 					default:
@@ -67,6 +76,7 @@ namespace Pug.Sal
 				Added = added,
 				Reinstated = reinstated,
 				Deleted = deleted,
+				Recategorized = recategorized,
 				Unchanged = unchanged,
 				DatasetVersion = action.Timestamp,
 				Performed = action
@@ -80,16 +90,17 @@ namespace Pug.Sal
 		private sealed record Entry( LocalityDefinition Definition, string? PostcodeKey, string NameKey );
 
 		// The dataset's distinct localities in first-seen order; a row repeating an earlier row's key
-		// is the same locality, and the first row's display values are kept. Positions are 1-based
-		// row numbers.
-		private IReadOnlyList<Entry> Check( CountryDefinition country, HashSet<string> subdivisions, IReadOnlyList<ImportRow> rows )
+		// is the same locality, and the first row's display values are kept, but it must give the
+		// same category. Positions are 1-based row numbers.
+		private IReadOnlyList<Entry> Check( CountryDefinition country, HashSet<string> subdivisions, Dictionary<string, bool> categories,
+											IReadOnlyList<ImportRow> rows )
 		{
 			if( rows.Count == 0 )
 				throw new DatasetImportException(
 					$"The dataset holds no rows; importing it would delete every locality of country '{country.Code}'." );
 
 			List<Entry> entries = new( rows.Count );
-			HashSet<LocalityKey> seen = new();
+			Dictionary<LocalityKey, string> seen = new();
 
 			for( int index = 0; index < rows.Count; index++ )
 			{
@@ -126,13 +137,36 @@ namespace Pug.Sal
 				if( problem is not null )
 					throw new DatasetImportException( $"{problem} ('{name}')", position );
 
-				if( seen.Add( new LocalityKey( country.Code, subdivision, postcodeKey, nameKey ) ) )
+				string? category = string.IsNullOrWhiteSpace( row.Category ) ? null : row.Category.Trim();
+
+				if( category is null )
+					throw new DatasetImportException( $"The category of '{name}' is missing.", position );
+
+				if( !categories.TryGetValue( category, out bool enabled ) )
+					throw new DatasetImportException( $"Category '{category}' is not assigned to country '{country.Code}'.", position );
+
+				if( !enabled )
+					throw new DatasetImportException( $"Category '{category}' is disabled in country '{country.Code}'.", position );
+
+				LocalityKey key = new( country.Code, subdivision, postcodeKey, nameKey );
+
+				if( seen.TryGetValue( key, out string? earlier ) )
 				{
-					entries.Add( new Entry(
-						new LocalityDefinition { Country = country.Code, Subdivision = subdivision!, Postcode = postcode!, Name = name! },
-						postcodeKey,
-						nameKey ) );
+					if( earlier != category )
+						throw new DatasetImportException(
+							$"'{name}' repeats an earlier row's locality with category '{category}' instead of '{earlier}'.", position );
+
+					continue;
 				}
+
+				seen.Add( key, category );
+				entries.Add( new Entry(
+					new LocalityDefinition
+					{
+						Country = country.Code, Subdivision = subdivision!, Postcode = postcode!, Name = name!, Category = category
+					},
+					postcodeKey,
+					nameKey ) );
 			}
 
 			return entries;

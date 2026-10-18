@@ -42,7 +42,8 @@ namespace Pug.Sal
 				Code = CountryCode( definition.Code ),
 				Alpha3 = alpha3!,
 				Name = Required( definition.Name, nameof(definition.Name) ),
-				PostcodePattern = pattern!
+				PostcodePattern = pattern!,
+				Categories = null!
 			};
 		}
 
@@ -71,8 +72,38 @@ namespace Pug.Sal
 				Country = CountryCode( definition.Country ),
 				Subdivision = Optional( definition.Subdivision )!,
 				Postcode = Optional( definition.Postcode )!,
+				Name = Required( definition.Name, nameof(definition.Name) ),
+				Category = Required( definition.Category, nameof(definition.Category) )
+			};
+		}
+
+		public static CategoryDefinition Category( CategoryDefinition? definition )
+		{
+			if( definition is null )
+				throw new ArgumentNullException( nameof(definition) );
+
+			return definition with
+			{
+				Code = Required( definition.Code, nameof(definition.Code) ),
 				Name = Required( definition.Name, nameof(definition.Name) )
 			};
+		}
+
+		// A new country's first categories: trimmed, blanks dropped, duplicates removed (first
+		// kept); at least one is required (DECISIONS D28).
+		public static IReadOnlyList<string> Categories( IEnumerable<string>? categories )
+		{
+			List<string> codes = ( categories ?? Enumerable.Empty<string>() )
+								.Select( Optional )
+								.Where( code => code is not null )
+								.Select( code => code! )
+								.Distinct( StringComparer.Ordinal )
+								.ToList();
+
+			if( codes.Count == 0 )
+				throw new ArgumentException( "A country needs at least one category.", nameof(CountryDefinition.Categories) );
+
+			return codes;
 		}
 
 		private static string Required( string? value, string member ) =>

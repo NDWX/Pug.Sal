@@ -53,5 +53,18 @@ namespace Pug.Sal.Models
 			set;
 #endif
 		}
+
+		// Category code or name; optional. When given, validation checks it and the combination
+		// must have it.
+		[DataMember]
+		public string Category
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
 	}
 }

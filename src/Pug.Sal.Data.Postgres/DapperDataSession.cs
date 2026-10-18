@@ -48,6 +48,26 @@ namespace Pug.Sal.Data.Postgres
 			public ActionContext<Reference>? lastUpdate { get; set; }
 		}
 
+		private sealed class CategoryRow
+		{
+			public string code { get; set; } = null!;
+			public string name { get; set; } = null!;
+			public string? retired { get; set; }
+			public ActionContext<Reference> registration { get; set; } = null!;
+			public ActionContext<Reference>? lastUpdate { get; set; }
+		}
+
+		// name is the global category's, joined on read.
+		private sealed class CountryCategoryRow
+		{
+			public string country { get; set; } = null!;
+			public string category { get; set; } = null!;
+			public string name { get; set; } = null!;
+			public string? disabled { get; set; }
+			public ActionContext<Reference> registration { get; set; } = null!;
+			public ActionContext<Reference>? lastUpdate { get; set; }
+		}
+
 		private sealed class LocalityRow
 		{
 			public string country { get; set; } = null!;
@@ -57,6 +77,7 @@ namespace Pug.Sal.Data.Postgres
 			public string? retired { get; set; }
 			public ActionContext<Reference> registration { get; set; } = null!;
 			public ActionContext<Reference>? lastUpdate { get; set; }
+			public string category { get; set; } = null!;
 		}
 
 		private sealed class ImportRunRow
@@ -68,6 +89,7 @@ namespace Pug.Sal.Data.Postgres
 			public int added { get; set; }
 			public int reinstated { get; set; }
 			public int deleted { get; set; }
+			public int recategorized { get; set; }
 			public int unchanged { get; set; }
 			public string datasetVersion { get; set; } = null!;
 			public ActionContext<Reference> performed { get; set; } = null!;
@@ -79,11 +101,18 @@ namespace Pug.Sal.Data.Postgres
 
 		private const string SubdivisionColumns = "country, code, name, type, retired, registration, lastUpdate";
 
+		private const string CategoryColumns = "code, name, retired, registration, lastUpdate";
+
+		// Over countryCategory c joined to its category g.
+		private const string CountryCategoryColumns =
+			"c.country, c.category, g.name, c.disabled, c.registration, c.lastUpdate";
+
 		private const string LocalityColumns =
-			"country, subdivision, postcode, name, retired, registration, lastUpdate";
+			"country, subdivision, postcode, name, retired, registration, lastUpdate, category";
 
 		private const string ImportRunColumns =
-			@"identifier, country, importer, source, added, reinstated, deleted, unchanged, datasetVersion, performed";
+			@"identifier, country, importer, source, added, reinstated, deleted, recategorized, unchanged, datasetVersion,
+				performed";
 
 		// Npgsql reads timestamptz as DateTimeKind.Utc already; the kind is stamped anyway, as in the
 		// SQLite store, so both stores honour the same contract the same way.
@@ -133,6 +162,26 @@ namespace Pug.Sal.Data.Postgres
 				LastUpdate = AsUtc( row.lastUpdate )!
 			};
 
+		private static Category Compose( CategoryRow row ) =>
+			new()
+			{
+				Definition = new CategoryDefinition { Code = row.code, Name = row.name },
+				Retired = RetiredFromText( row.retired ),
+				Registration = AsUtc( row.registration )!,
+				LastUpdate = AsUtc( row.lastUpdate )!
+			};
+
+		private static CountryCategory Compose( CountryCategoryRow row ) =>
+			new()
+			{
+				Country = row.country,
+				Category = row.category,
+				Name = row.name,
+				Disabled = RetiredFromText( row.disabled ),
+				Registration = AsUtc( row.registration )!,
+				LastUpdate = AsUtc( row.lastUpdate )!
+			};
+
 		// '' in the subdivision column means none.
 		private static Locality Compose( LocalityRow row ) =>
 			new()
@@ -142,7 +191,8 @@ namespace Pug.Sal.Data.Postgres
 					Country = row.country,
 					Subdivision = row.subdivision.Length == 0 ? null! : row.subdivision,
 					Postcode = row.postcode!,
-					Name = row.name
+					Name = row.name,
+					Category = row.category
 				},
 				Retired = RetiredFromText( row.retired ),
 				Registration = AsUtc( row.registration )!,
@@ -159,6 +209,7 @@ namespace Pug.Sal.Data.Postgres
 				Added = row.added,
 				Reinstated = row.reinstated,
 				Deleted = row.deleted,
+				Recategorized = row.recategorized,
 				Unchanged = row.unchanged,
 				DatasetVersion = DatasetVersions.FromText( row.datasetVersion ),
 				Performed = AsUtc( row.performed )!
@@ -291,6 +342,131 @@ namespace Pug.Sal.Data.Postgres
 			return next;
 		}
 
+		// == Global categories ==
+
+		public Task InsertCategoryAsync( Category category )
+		{
+			return InsertAsync( () => Connection.ExecuteAsync(
+					$@"insert into category({CategoryColumns})
+						values(@code, @name, @retired, @registration, @lastUpdate);",
+					new
+					{
+						code = category.Definition.Code,
+						name = category.Definition.Name,
+						retired = RetiredText( category.Retired ),
+						registration = category.Registration,
+						lastUpdate = category.LastUpdate
+					}
+				), $"Category '{category.Definition.Code}'" );
+		}
+
+		public async Task<Category?> GetCategoryAsync( string category )
+		{
+			CategoryRow? row = await Connection.QueryFirstOrDefaultAsync<CategoryRow?>(
+									$"select {CategoryColumns} from category where code = @category;",
+									new { category }
+								).ConfigureAwait( false );
+
+			return row is null ? null : Compose( row );
+		}
+
+		public async Task<IEnumerable<Category>> GetCategoriesAsync( bool includeRetired )
+		{
+			IEnumerable<CategoryRow> rows = await Connection.QueryAsync<CategoryRow>(
+													$@"select {CategoryColumns} from category
+														where @includeRetired or retired is null
+														order by code;",
+													new { includeRetired }
+												).ConfigureAwait( false );
+
+			return rows.Select( Compose ).ToList();
+		}
+
+		public async Task<bool> UpdateCategoryAsync( CategoryDefinition definition, ActionContext<Reference> lastUpdate )
+		{
+			int affected = await Connection.ExecuteAsync(
+									"update category set name = @name, lastUpdate = @lastUpdate where code = @code;",
+									new { code = definition.Code, name = definition.Name, lastUpdate }
+								).ConfigureAwait( false );
+
+			return affected > 0;
+		}
+
+		public async Task<bool> SetCategoryRetiredAsync( string category, DateTime? retired, ActionContext<Reference> lastUpdate )
+		{
+			int affected = await Connection.ExecuteAsync(
+									"update category set retired = @retired, lastUpdate = @lastUpdate where code = @category;",
+									new { category, retired = RetiredText( retired ), lastUpdate }
+								).ConfigureAwait( false );
+
+			return affected > 0;
+		}
+
+		// == Country categories ==
+
+		public Task InsertCountryCategoryAsync( CountryCategory category )
+		{
+			return InsertAsync( () => Connection.ExecuteAsync(
+					@"insert into countryCategory(country, category, disabled, registration, lastUpdate)
+						values(@country, @category, @disabled, @registration, @lastUpdate);",
+					new
+					{
+						country = category.Country,
+						category = category.Category,
+						disabled = RetiredText( category.Disabled ),
+						registration = category.Registration,
+						lastUpdate = category.LastUpdate
+					}
+				), $"Category '{category.Category}' of country '{category.Country}'" );
+		}
+
+		public async Task<CountryCategory?> GetCountryCategoryAsync( string country, string category )
+		{
+			CountryCategoryRow? row = await Connection.QueryFirstOrDefaultAsync<CountryCategoryRow?>(
+											$@"select {CountryCategoryColumns}
+												from countryCategory c join category g on g.code = c.category
+												where c.country = @country and c.category = @category;",
+											new { country, category }
+										).ConfigureAwait( false );
+
+			return row is null ? null : Compose( row );
+		}
+
+		public async Task<IEnumerable<CountryCategory>> GetCountryCategoriesAsync( string country, bool includeDisabled )
+		{
+			IEnumerable<CountryCategoryRow> rows = await Connection.QueryAsync<CountryCategoryRow>(
+														$@"select {CountryCategoryColumns}
+															from countryCategory c join category g on g.code = c.category
+															where c.country = @country and ( @includeDisabled or c.disabled is null )
+															order by c.category;",
+														new { country, includeDisabled }
+													).ConfigureAwait( false );
+
+			return rows.Select( Compose ).ToList();
+		}
+
+		public async Task<bool> SetCountryCategoryDisabledAsync( string country, string category, DateTime? disabled,
+																ActionContext<Reference> lastUpdate )
+		{
+			int affected = await Connection.ExecuteAsync(
+									@"update countryCategory set disabled = @disabled, lastUpdate = @lastUpdate
+										where country = @country and category = @category;",
+									new { country, category, disabled = RetiredText( disabled ), lastUpdate }
+								).ConfigureAwait( false );
+
+			return affected > 0;
+		}
+
+		public async Task<bool> DeleteCountryCategoryAsync( string country, string category )
+		{
+			int affected = await Connection.ExecuteAsync(
+									"delete from countryCategory where country = @country and category = @category;",
+									new { country, category }
+								).ConfigureAwait( false );
+
+			return affected > 0;
+		}
+
 		// == Subdivisions ==
 
 		public Task InsertSubdivisionAsync( Subdivision subdivision )
@@ -368,7 +544,7 @@ namespace Pug.Sal.Data.Postgres
 		{
 			return InsertAsync( () => Connection.ExecuteAsync(
 					$@"insert into locality({LocalityColumns}, postcodeKey, nameKey, stamped)
-						values(@country, @subdivision, @postcode, @name, @retired, @registration, @lastUpdate,
+						values(@country, @subdivision, @postcode, @name, @retired, @registration, @lastUpdate, @category,
 							@postcodeKey, @nameKey, @stamped);",
 					InsertParameters( locality, postcodeKey, nameKey )
 				), $"Locality '{locality.Definition.Country}/{locality.Definition.Subdivision}/{postcodeKey}/{nameKey}'" );
@@ -381,6 +557,7 @@ namespace Pug.Sal.Data.Postgres
 				subdivision = locality.Definition.Subdivision ?? string.Empty,
 				postcode = locality.Definition.Postcode,
 				name = locality.Definition.Name,
+				category = locality.Definition.Category,
 				retired = RetiredText( locality.Retired ),
 				registration = locality.Registration,
 				lastUpdate = locality.LastUpdate,
@@ -410,7 +587,8 @@ namespace Pug.Sal.Data.Postgres
 				nameKey = key.NameKey,
 			};
 
-		public async Task<IEnumerable<Locality>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, bool includeRetired )
+		public async Task<IEnumerable<Locality>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey,
+																	string? category, bool includeRetired )
 		{
 			string filter = "country = @country";
 
@@ -423,25 +601,30 @@ namespace Pug.Sal.Data.Postgres
 			if( nameKey is not null )
 				filter += " and nameKey = @nameKey";
 
+			if( category is not null )
+				filter += " and category = @category";
+
 			if( !includeRetired )
 				filter += " and retired is null";
 
 			IEnumerable<LocalityRow> rows = await Connection.QueryAsync<LocalityRow>(
 													$@"select {LocalityColumns} from locality where {filter}
 														order by subdivision, nameKey, postcodeKey;",
-													new { country, subdivision, postcodeKey, nameKey }
+													new { country, subdivision, postcodeKey, nameKey, category }
 												).ConfigureAwait( false );
 
 			return rows.Select( Compose ).ToList();
 		}
 
-		public async Task<IEnumerable<Locality>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, int limit )
+		public async Task<IEnumerable<Locality>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision,
+																		string? category, int limit )
 		{
 			// Prefix matches first, in name order; then, when there is room, close non-prefix matches
 			// by pg_trgm similarity (the '%' operator, at pg_trgm.similarity_threshold), best first.
 			// The prefix is compared with left() rather than LIKE, so '%', '_' and '\' in it are
 			// taken literally; the range bound lets the (country, nameKey) index narrow the scan.
-			string subdivisionFilter = subdivision is null ? string.Empty : " and subdivision = @subdivision";
+			string subdivisionFilter = ( subdivision is null ? string.Empty : " and subdivision = @subdivision" ) +
+										( category is null ? string.Empty : " and category = @category" );
 
 			IEnumerable<LocalityRow> rows = await Connection.QueryAsync<LocalityRow>(
 													$@"select {LocalityColumns} from (
@@ -461,7 +644,7 @@ namespace Pug.Sal.Data.Postgres
 														) matched
 														order by tier, score desc, nameKey, subdivision, postcodeKey
 														limit @limit;",
-													new { country, prefix = namePrefixKey, subdivision, limit }
+													new { country, prefix = namePrefixKey, subdivision, category, limit }
 												).ConfigureAwait( false );
 
 			return rows.Select( Compose ).ToList();
@@ -500,11 +683,22 @@ namespace Pug.Sal.Data.Postgres
 			return affected > 0;
 		}
 
-		public Task<bool> HasLocalitiesAsync( string country )
+		public Task<bool> HasLocalitiesAsync( string country, string? category = null )
 		{
 			return Connection.ExecuteScalarAsync<bool>(
-					"select exists( select 1 from locality where country = @country );",
-					new { country }
+					category is null
+						? "select exists( select 1 from locality where country = @country );"
+						: "select exists( select 1 from locality where country = @country and category = @category );",
+					new { country, category }
+				);
+		}
+
+		public Task<int> ReplaceLocalityCategoryAsync( string country, string from, string to, ActionContext<Reference> lastUpdate )
+		{
+			return Connection.ExecuteAsync(
+					@"update locality set category = @to, lastUpdate = @lastUpdate, stamped = @stamped
+						where country = @country and category = @from;",
+					new { country, from, to, lastUpdate, stamped = DatasetVersions.ToText( lastUpdate.Timestamp ) }
 				);
 		}
 
@@ -515,14 +709,14 @@ namespace Pug.Sal.Data.Postgres
 			LocalityKey key = new( locality.Definition.Country, locality.Definition.Subdivision, postcodeKey, nameKey );
 
 			// The retired timestamp is selected as a flag only; a missing row yields no result.
-			IEnumerable<bool> existing = await Connection.QueryAsync<bool>(
-												@"select retired is not null from locality
-													where country = @country and subdivision = @subdivision
-														and postcodeKey = @postcodeKey and nameKey = @nameKey;",
-												KeyParameters( key )
-											).ConfigureAwait( false );
+			IEnumerable<(bool Retired, string Category)> existing = await Connection.QueryAsync<(bool, string)>(
+																		@"select retired is not null, category from locality
+																			where country = @country and subdivision = @subdivision
+																				and postcodeKey = @postcodeKey and nameKey = @nameKey;",
+																		KeyParameters( key )
+																	).ConfigureAwait( false );
 
-			bool[] found = existing.ToArray();
+			(bool Retired, string Category)[] found = existing.ToArray();
 
 			if( found.Length == 0 )
 			{
@@ -535,11 +729,12 @@ namespace Pug.Sal.Data.Postgres
 			}
 
 			await Connection.ExecuteAsync(
-						@"update locality set retired = null, lastUpdate = @lastUpdate, stamped = @stamped
+						@"update locality set retired = null, category = @category, lastUpdate = @lastUpdate, stamped = @stamped
 							where country = @country and subdivision = @subdivision
 								and postcodeKey = @postcodeKey and nameKey = @nameKey;",
 						new
 						{
+							category = locality.Definition.Category,
 							country = key.Country,
 							subdivision = key.Subdivision ?? string.Empty,
 							postcodeKey = key.PostcodeKey ?? string.Empty,
@@ -549,7 +744,9 @@ namespace Pug.Sal.Data.Postgres
 						}
 					).ConfigureAwait( false );
 
-			return found[0] ? LocalityUpsertOutcome.Reinstated : LocalityUpsertOutcome.Unchanged;
+			return found[0].Retired ? LocalityUpsertOutcome.Reinstated :
+					found[0].Category != locality.Definition.Category ? LocalityUpsertOutcome.Recategorized :
+					LocalityUpsertOutcome.Unchanged;
 		}
 
 		public Task<int> DeleteLocalitiesStampedBeforeAsync( string country, DateTime timestamp )
@@ -565,7 +762,7 @@ namespace Pug.Sal.Data.Postgres
 			return Connection.ExecuteAsync(
 					$@"insert into importRun({ImportRunColumns})
 						values(@identifier, @country, @importer, @source, @added, @reinstated, @deleted,
-							@unchanged, @datasetVersion, @performed);",
+							@recategorized, @unchanged, @datasetVersion, @performed);",
 					new
 					{
 						identifier = run.Identifier,
@@ -575,6 +772,7 @@ namespace Pug.Sal.Data.Postgres
 						added = run.Added,
 						reinstated = run.Reinstated,
 						deleted = run.Deleted,
+						recategorized = run.Recategorized,
 						unchanged = run.Unchanged,
 						datasetVersion = DatasetVersions.ToText( run.DatasetVersion ),
 						performed = run.Performed

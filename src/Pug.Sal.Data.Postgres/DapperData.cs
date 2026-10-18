@@ -13,7 +13,7 @@ namespace Pug.Sal.Data.Postgres
 	// - Codes and keys are text in the "C" collation, so comparisons and ordering are bytewise, as
 	//   in SQLite, and the stores order results identically.
 	// - Version-valued columns (country.currentVersion, importRun.datasetVersion, locality.stamped)
-	//   and retired (always an action timestamp, so a version) hold DatasetVersions.TextFormat
+	//   and retired and disabled (always action timestamps, so versions) hold DatasetVersions.TextFormat
 	//   digits, also in "C": exact to the tick, which timestamptz is not (DECISIONS D6, D19).
 	// - The ActionContext columns are JSON text.
 	// - Search adds pg_trgm similarity matches (D3). The schema creates the extension, which needs
@@ -58,6 +58,29 @@ namespace Pug.Sal.Data.Postgres
 									@"drop table country;"
 								),
 							new UpgradeScript(
+									"Category table", Empty,
+									@"create table category(
+											    code text collate ""C"" not null primary key,
+											    name text not null,
+											    retired text collate ""C"",
+											    registration text not null,
+											    lastUpdate text
+											);",
+									@"drop table category;"
+								),
+							new UpgradeScript(
+									"Country category table", Empty,
+									@"create table countryCategory(
+											    country text collate ""C"" not null references country(code),
+											    category text collate ""C"" not null references category(code),
+											    disabled text collate ""C"",
+											    registration text not null,
+											    lastUpdate text,
+											    primary key( country, category )
+											);",
+									@"drop table countryCategory;"
+								),
+							new UpgradeScript(
 									"Subdivision table", Empty,
 									@"create table subdivision(
 											    country text collate ""C"" not null references country(code),
@@ -84,11 +107,13 @@ namespace Pug.Sal.Data.Postgres
 											    registration text not null,
 											    lastUpdate text,
 											    stamped text collate ""C"" not null,
+											    category text collate ""C"" not null,
 											    primary key( country, subdivision, postcodeKey, nameKey )
 											);
 											create index ixLocalityName on locality(country, nameKey);
 											create index ixLocalityPostcode on locality(country, postcodeKey);
 											create index ixLocalityStamped on locality(country, stamped);
+											create index ixLocalityCategory on locality(country, category);
 											create index ixLocalityNameTrigram on locality using gin (nameKey gin_trgm_ops);",
 									@"drop table locality;"
 								),
@@ -102,6 +127,7 @@ namespace Pug.Sal.Data.Postgres
 											    added integer not null,
 											    reinstated integer not null,
 											    deleted integer not null,
+											    recategorized integer not null,
 											    unchanged integer not null,
 											    datasetVersion text collate ""C"" not null,
 											    performed text not null

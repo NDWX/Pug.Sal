@@ -53,14 +53,16 @@ update the skill in the same commit.
   - A refusal is `Pug.Sal.Abstractions.AccessDeniedException` (D25), never Pug.Application.Security's
     obsolete `NotAuthorized`. Only that type maps to 403: an OS `UnauthorizedAccessException` stays a
     server fault.
-  - Every check is against `ResourceQualifiers.AllCountries` only.
+  - Every check is against `ResourceQualifiers.AllCountries`, except managing and reading the
+    global category list, which is checked against `ResourceQualifiers.AllCategories` (D28).
   - Country-specific permissions are deferred. If they return, the host's provider resolves them
     (DECISIONS D8).
   - Sal never references a concrete provider: Entra roles are wired by the host.
 - **Locality identity** is `(country, subdivision, normalized postcode, normalized name)`, with no
   surrogate identifier. A locality record is one locality/postcode pair; a postcode may span
   localities and subdivisions (AU 2620). Localities are never updated: they are created, retired,
-  reinstated or deleted.
+  reinstated or deleted. The one exception is a locality's category (D28), changed only by
+  disabling a category with a replacement or by an import.
 - **Validation never auto-corrects.** It reports outcomes per component, canonical forms and
   suggestions.
 - **No history.** Countries and subdivisions are retired, never deleted. Localities may also be
@@ -92,6 +94,9 @@ update the skill in the same commit.
   AU) is the data maintainer's choice. Subdivision codes are maintainer-defined and keyed with
   their country, so they exclude it (`NSW`, not `AU-NSW`; recommended, not enforced, D27).
   Postcodes are unique per country only.
+- **Categories** (D28): every locality has one, assigned to its country and enabled when the
+  locality is created or imported. The category list is global; a country always has at least
+  one enabled category, and a category in use is disabled, never unassigned.
 - **Times:** all UTC. SQLite reads stamp `DateTimeKind.Utc`.
 
 ## Conventions

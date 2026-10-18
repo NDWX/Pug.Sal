@@ -18,7 +18,7 @@ public sealed class PostgresSearchTests : IClassFixture<PostgresDatabaseFixture>
 	private static Locality LocalityRecord( string name, string postcode ) =>
 		new()
 		{
-			Definition = new LocalityDefinition { Country = "AU", Subdivision = "NSW", Postcode = postcode, Name = name },
+			Definition = new LocalityDefinition { Country = "AU", Subdivision = "NSW", Postcode = postcode, Name = name, Category = "TOWN" },
 			Registration = new ActionContext<Reference>
 			{
 				Actor = new Reference { Type = "USER", Identifier = "seed" },
@@ -52,13 +52,13 @@ public sealed class PostgresSearchTests : IClassFixture<PostgresDatabaseFixture>
 			context: new { } );
 
 		Locality[] results = ( await _fixture.ApplicationData.ReadAsync(
-									( session, _ ) => session.SearchLocalitiesAsync( "AU", "WAGA WAGGA", null, 10 ),
+									( session, _ ) => session.SearchLocalitiesAsync( "AU", "WAGA WAGGA", null, null, 10 ),
 									context: new { } ) ).ToArray();
 
 		Assert.Equal( "Wagga Wagga", Assert.Single( results ).Definition.Name );
 
 		Locality[] prefixed = ( await _fixture.ApplicationData.ReadAsync(
-									( session, _ ) => session.SearchLocalitiesAsync( "AU", "WAGA", null, 10 ),
+									( session, _ ) => session.SearchLocalitiesAsync( "AU", "WAGA", null, null, 10 ),
 									context: new { } ) ).ToArray();
 
 		Assert.Equal( new[] { "Wagait Beach", "Wagga Wagga" }, prefixed.Select( l => l.Definition.Name ) );

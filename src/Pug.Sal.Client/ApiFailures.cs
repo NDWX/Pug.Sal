@@ -64,6 +64,9 @@ namespace Pug.Sal.Client
 				case FailureTypes.UnknownLocality:
 					return new UnknownLocalityException( failure.Country, failure.Subdivision, failure.Postcode, failure.Name );
 
+				case FailureTypes.UnknownCategory:
+					return new UnknownCategoryException( failure.Country, failure.Category );
+
 				case FailureTypes.DuplicateEntry:
 					return new DuplicateEntryException( failure.EntityType, failure.Key );
 

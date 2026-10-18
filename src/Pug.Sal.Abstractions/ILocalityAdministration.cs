@@ -13,7 +13,8 @@ namespace Pug.Sal.Abstractions
 	// Pug.Sal.Client's LocalityAdministrationClient (DECISIONS D16).
 	//
 	// Authorization: the reads require SecurityOperations.View, and each write requires the
-	// SecurityOperations value it names, all on ResourceQualifiers.AllCountries; AccessDeniedException
+	// SecurityOperations value it names, all on ResourceQualifiers.AllCountries, except the global
+	// category operations, on ResourceQualifiers.AllCategories (DECISIONS D28); AccessDeniedException
 	// otherwise, and a call without an authenticated principal is refused.
 	//
 	// The reads behave as their ILocalityDirectory counterparts: country-scoped results carry the
@@ -30,7 +31,14 @@ namespace Pug.Sal.Abstractions
 	// Localities are addressed by their key: country, subdivision code (null in countries without
 	// subdivisions), postcode (null when it has none) and name, postcode and name matched on their
 	// normalized forms. A locality is one locality/postcode pair, and is never updated: it is
-	// created, retired, reinstated or deleted, so a correction is a delete and a create.
+	// created, retired, reinstated or deleted, so a correction is a delete and a create. The one
+	// exception is its category, which DisableCategoryAsync with a replacement, or an import,
+	// changes.
+	//
+	// Global categories (DECISIONS D28) are created, updated, retired and reinstated, never
+	// deleted; their writes bump no country's version and publish a LocalityChange with a null
+	// Country. A category is assigned to a country before its localities can use it; a country
+	// always has at least one enabled category.
 	public interface ILocalityAdministration
 	{
 		// == Reads (VIEW) ==
@@ -51,10 +59,19 @@ namespace Pug.Sal.Abstractions
 		// UnknownSubdivisionException when either does not exist.
 		Task<Versioned<Subdivision>> GetSubdivisionAsync( string country, string subdivision );
 
+		// Requires VIEW on AllCategories. The global category list, ordered by code.
+		Task<IEnumerable<Category>> GetCategoriesAsync( bool includeRetired = false );
+
+		// Requires VIEW on AllCategories. Throws UnknownCategoryException (Country null).
+		Task<Category> GetCategoryAsync( string category );
+
+		// The categories assigned to the country, ordered by code. Throws UnknownCountryException.
+		Task<Versioned<IEnumerable<CountryCategory>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true );
+
 		// Lists the country's localities, narrowed by any combination of subdivision code,
-		// postcode and name, as ILocalityDirectory.GetLocalitiesAsync. Throws
+		// postcode, name and category code, as ILocalityDirectory.GetLocalitiesAsync. Throws
 		// UnknownCountryException when the country does not exist.
-		Task<Versioned<IEnumerable<Locality>>> GetLocalitiesAsync( string country, string subdivision = null, string postcode = null, string name = null, bool includeRetired = false );
+		Task<Versioned<IEnumerable<Locality>>> GetLocalitiesAsync( string country, string subdivision = null, string postcode = null, string name = null, string category = null, bool includeRetired = false );
 
 		// A locality by its key. Throws UnknownCountryException or UnknownLocalityException when
 		// either does not exist.
@@ -63,15 +80,19 @@ namespace Pug.Sal.Abstractions
 		// Autocomplete over current localities, as ILocalityDirectory.SearchLocalitiesAsync. Throws
 		// UnknownCountryException when the country does not exist and ArgumentException when text
 		// is empty.
-		Task<Versioned<IEnumerable<Locality>>> SearchLocalitiesAsync( string country, string text, string subdivision = null, int limit = 20 );
+		Task<Versioned<IEnumerable<Locality>>> SearchLocalitiesAsync( string country, string text, string subdivision = null, string category = null, int limit = 20 );
 
 		// == Writes ==
 
-		// Requires CREATE. Throws DuplicateEntryException when the code exists (retired or not) and
-		// ArgumentException when the definition is invalid.
+		// Requires CREATE. definition.Categories names the country's first categories (at least one,
+		// each a current global category); they are assigned in the same transaction. Throws
+		// DuplicateEntryException when the code exists (retired or not), UnknownCategoryException
+		// (Country null) for an unknown category, and ArgumentException when the definition is
+		// invalid, names no category or a retired one.
 		Task<Country> CreateCountryAsync( CountryDefinition definition );
 
-		// Requires MODIFY. Replaces the definition of the country named by definition.Code.
+		// Requires MODIFY. Replaces the definition of the country named by definition.Code;
+		// definition.Categories is ignored.
 		// Changing HasSubdivisions is refused (ArgumentException) while the country holds
 		// localities. Throws UnknownCountryException when the country does not exist.
 		Task<Country> UpdateCountryAsync( CountryDefinition definition );
@@ -100,9 +121,10 @@ namespace Pug.Sal.Abstractions
 		Task<Versioned<Subdivision>> ReinstateSubdivisionAsync( string country, string subdivision );
 
 		// Requires CREATE. Throws UnknownCountryException, UnknownSubdivisionException,
+		// UnknownCategoryException when the category is not assigned to the country,
 		// DuplicateEntryException when the country already holds the key, and ArgumentException when
-		// the postcode is missing though required, does not match the country's PostcodePattern, or
-		// the definition is otherwise invalid.
+		// the category is disabled, the postcode is missing though required, does not match the
+		// country's PostcodePattern, or the definition is otherwise invalid.
 		Task<Versioned<Locality>> CreateLocalityAsync( LocalityDefinition definition );
 
 		// Requires RETIRE. Throws UnknownCountryException or UnknownLocalityException.
@@ -126,10 +148,13 @@ namespace Pug.Sal.Abstractions
 		//   subdivision stays retired;
 		// - the import's timestamp is the dataset version it produces, taken after the country is
 		//   locked, so it is later than every earlier write's;
+		// - every row's category must be assigned to the country and enabled, and a row repeating
+		//   an earlier row's key must give the same category, or the whole import fails;
 		// - each row is one locality, matched by its full key: created when missing (Registration
 		//   at the import's timestamp), otherwise its LastUpdate is re-stamped with the import's
-		//   context, and it is reinstated when retired; a row differing from the record only in
-		//   the casing or spacing of its name matches it and keeps the record's display name;
+		//   context, its category set to the row's, and it is reinstated when retired; a row
+		//   differing from the record only in the casing or spacing of its name matches it and
+		//   keeps the record's display name;
 		// - every locality of the country whose latest of Registration and LastUpdate is earlier
 		//   than the import's timestamp is unwanted and deleted, those added by an administrator
 		//   included.
@@ -143,5 +168,50 @@ namespace Pug.Sal.Abstractions
 		// Requires IMPORT. The country's import runs, most recent first. Throws
 		// UnknownCountryException.
 		Task<IEnumerable<ImportRun>> GetImportRunsAsync( string country );
+
+		// == Global categories (on AllCategories) ==
+
+		// Requires CREATE. Throws DuplicateEntryException when the code exists (retired or not) and
+		// ArgumentException when the definition is invalid.
+		Task<Category> CreateCategoryAsync( CategoryDefinition definition );
+
+		// Requires MODIFY. Replaces the name of the category named by definition.Code. Throws
+		// UnknownCategoryException.
+		Task<Category> UpdateCategoryAsync( CategoryDefinition definition );
+
+		// Requires RETIRE. A retired category can no longer be assigned or enabled; countries that
+		// have it keep it as it is. Throws UnknownCategoryException.
+		Task<Category> RetireCategoryAsync( string category );
+
+		// Requires RETIRE. Throws UnknownCategoryException.
+		Task<Category> ReinstateCategoryAsync( string category );
+
+		// == Country categories (on AllCountries) ==
+
+		// Requires MODIFY. Assigns a current global category to the country, enabled; assigning
+		// one already assigned changes nothing. Throws UnknownCountryException,
+		// UnknownCategoryException (Country null) for an unknown category, and ArgumentException for
+		// a retired one.
+		Task<Versioned<CountryCategory>> AssignCategoryAsync( string country, string category );
+
+		// Requires MODIFY. Removes the assignment. Refused (ArgumentException) when any locality of
+		// the country has the category, retired ones included, or when it would leave the country
+		// without an enabled category. Returns the dataset version produced. Throws
+		// UnknownCountryException or UnknownCategoryException.
+		Task<DateTime> UnassignCategoryAsync( string country, string category );
+
+		// Requires RETIRE. Disables the category in the country: localities can no longer be created
+		// or imported under it. With a replacement (another enabled category of the country), every
+		// locality of the country with the category, retired ones included, moves to it in the
+		// same transaction, its LastUpdate re-stamped; without one, they keep the disabled
+		// category. Refused (ArgumentException) when it would leave the country without an enabled
+		// category, or the replacement is the category itself or disabled. Disabling a disabled
+		// category without a replacement changes nothing; with one, it moves the localities still
+		// holding it. Throws UnknownCountryException or UnknownCategoryException.
+		Task<Versioned<CountryCategory>> DisableCategoryAsync( string country, string category, string replacement = null );
+
+		// Requires RETIRE. Refused (ArgumentException) when the global category is retired. Throws
+		// UnknownCountryException or UnknownCategoryException.
+		Task<Versioned<CountryCategory>> EnableCategoryAsync( string country, string category );
 	}
 }

@@ -42,7 +42,8 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 
 		await _admin.CreateCountryAsync( new CountryDefinition
 		{
-			Code = code, Name = "Country " + code, PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true
+			Code = code, Name = "Country " + code, PostcodePattern = @"^\d{4}$", PostcodeRequired = true, HasSubdivisions = true,
+			Categories = new[] { "TOWN" }
 		} );
 		await _admin.CreateSubdivisionAsync( new SubdivisionDefinition { Country = code, Code = "S1", Name = "One" } );
 
@@ -82,7 +83,8 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		ValidationResult mismatch = await _directory.ValidateAsync( new AddressCandidate { Country = "AU", Subdivision = "ACT", Locality = "Environa", Postcode = "2620" } );
 
 		Assert.True( valid.IsValid );
-		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "NSW", Locality = "Sydney", Postcode = "2000" }, valid.Match );
+		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "NSW", Locality = "Sydney", Postcode = "2000", Category = "SUBURB" },
+					valid.Match );
 		Assert.Equal( ValidationOutcomes.Mismatch, mismatch.Combination );
 		Assert.Equal( "NSW", Assert.Single( mismatch.Suggestions ).Subdivision );
 	}
@@ -124,11 +126,11 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		HttpClient admin = _fixture.CreateClient( SalApiFixture.Admin );
 
 		using HttpResponseMessage country = await admin.PostAsJsonAsync( "administration/countries",
-										new CountryDefinition { Code = "XL", Name = "Located", HasSubdivisions = true } );
+										new CountryDefinition { Code = "XL", Name = "Located", HasSubdivisions = true, Categories = new[] { "TOWN" } } );
 		using HttpResponseMessage subdivision = await admin.PostAsJsonAsync( $"administration/countries/{code}/subdivisions",
 										new SubdivisionDefinition { Code = "S 2", Name = "Two" } );
 		using HttpResponseMessage locality = await admin.PostAsJsonAsync( $"administration/countries/{code}/localities",
-										new LocalityDefinition { Subdivision = "S1", Postcode = "2000", Name = "Mount Town" } );
+										new LocalityDefinition { Subdivision = "S1", Postcode = "2000", Name = "Mount Town", Category = "TOWN" } );
 
 		Assert.Equal( "/administration/countries/XL", country.Headers.Location!.OriginalString );
 		Assert.Equal( $"/administration/countries/{code}/subdivisions/S%202", subdivision.Headers.Location!.OriginalString );
@@ -198,7 +200,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 	{
 		string code = await NewCountryAsync();
 
-		Versioned<Locality> created = await _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1000", Name = "Alpha" } );
+		Versioned<Locality> created = await _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1000", Name = "Alpha", Category = "TOWN" } );
 		Versioned<Locality> retired = await _admin.RetireLocalityAsync( code, "S1", "1000", "alpha" );
 		Versioned<Locality> reinstated = await _admin.ReinstateLocalityAsync( code, "S1", "1000", "Alpha" );
 		Country updated = await _admin.UpdateCountryAsync( ( await _admin.GetCountryAsync( code ) ).Definition with { Name = "Renamed" } );
@@ -217,6 +219,56 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		await Assert.ThrowsAsync<UnknownLocalityException>( () => _admin.GetLocalityAsync( code, "S1", "1000", "Alpha" ) );
 	}
 
+	// == Categories (DECISIONS D28) ==
+
+	[Fact]
+	public async Task CategoriesRoundTrip()
+	{
+		Versioned<IEnumerable<CountryCategoryInfo>> au = await _directory.GetCountryCategoriesAsync( "AU" );
+		Versioned<IEnumerable<LocalityInfo>> towns = await _directory.GetLocalitiesAsync( "AU", category: "TOWN" );
+		Versioned<IEnumerable<LocalityInfo>> suburbs = await _directory.SearchLocalitiesAsync( "AU", "s", category: "SUBURB" );
+
+		Assert.Equal( new[] { "SUBURB", "TOWN" }, ( await _directory.GetCategoriesAsync() ).Select( c => c.Definition.Code ).Take( 2 ) );
+		Assert.Equal( new[] { "SUBURB|Suburb", "TOWN|Town" }, au.Value.Select( c => $"{c.Category}|{c.Name}" ) );
+		Assert.Equal( new[] { "NSW|2620|Environa" }, Keys( towns.Value ) );
+		Assert.Equal( "SUBURB", ( await _directory.GetLocalityAsync( "AU", "ACT", "2620", "Hume" ) ).Value.Definition.Category );
+		Assert.Equal( new[] { "VIC|3182|St Kilda", "NSW|2000|Sydney" }, Keys( suburbs.Value ) );
+
+		string code = await NewCountryAsync();
+
+		Category village = await _admin.CreateCategoryAsync( new CategoryDefinition { Code = "VILLAGE", Name = "Villag" } );
+		Category renamed = await _admin.UpdateCategoryAsync( new CategoryDefinition { Code = "VILLAGE", Name = "Village" } );
+		Versioned<CountryCategory> assigned = await _admin.AssignCategoryAsync( code, "VILLAGE" );
+		await _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1000", Name = "Alpha", Category = "VILLAGE" } );
+		Versioned<CountryCategory> disabled = await _admin.DisableCategoryAsync( code, "VILLAGE", "TOWN" );
+		Versioned<CountryCategory> enabled = await _admin.EnableCategoryAsync( code, "VILLAGE" );
+		DateTime unassigned = await _admin.UnassignCategoryAsync( code, "VILLAGE" );
+		Category retired = await _admin.RetireCategoryAsync( "VILLAGE" );
+
+		Assert.Equal( SalApiFixture.Admin, village.Registration.Actor.Identifier );
+		Assert.Equal( "Village", renamed.Definition.Name );
+		Assert.Equal( ( "VILLAGE", "Village" ), ( assigned.Value.Category, assigned.Value.Name ) );
+		Assert.Equal( disabled.DatasetVersion, disabled.Value.Disabled );
+		Assert.Null( enabled.Value.Disabled );
+		Assert.Equal( "TOWN", ( await _admin.GetLocalityAsync( code, "S1", "1000", "Alpha" ) ).Value.Definition.Category );
+		Assert.Equal( unassigned, ( await _admin.GetCountryAsync( code ) ).CurrentVersion );
+		Assert.Equal( new[] { "TOWN" }, ( await _admin.GetCountryCategoriesAsync( code, includeDisabled: false ) ).Value.Select( c => c.Category ) );
+		Assert.NotNull( ( await _admin.GetCategoryAsync( "VILLAGE" ) ).Retired );
+		Assert.NotNull( retired.Retired );
+		Assert.Null( ( await _admin.ReinstateCategoryAsync( "VILLAGE" ) ).Retired );
+		Assert.Contains( _fixture.EventPublisher.Changes,
+						c => c.Country == code && c.EntityType == ChangeEntityTypes.CountryCategory && c.Replacement == "TOWN" );
+
+		UnknownCategoryException global = await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.GetCategoryAsync( "NOPE" ) );
+		UnknownCategoryException unassignedCategory = await Assert.ThrowsAsync<UnknownCategoryException>(
+			() => _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1001", Name = "Beta", Category = "SUBURB" } ) );
+		ArgumentException last = await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "TOWN" ) );
+
+		Assert.Equal( ( (string?)null, "NOPE" ), ( global.Country, global.Category ) );
+		Assert.Equal( ( code, "SUBURB" ), ( unassignedCategory.Country, unassignedCategory.Category ) );
+		Assert.Equal( "category", last.ParamName );
+	}
+
 	[Fact]
 	public async Task AdministrationFailuresSurfaceAsTheFacadesExceptions()
 	{
@@ -230,7 +282,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Assert.Equal( ( ChangeEntityTypes.Subdivision, "S1" ), ( duplicate.EntityType, duplicate.Key ) );
 		Assert.Equal( nameof(CountryDefinition.Code), invalid.ParamName );
 		await Assert.ThrowsAsync<UnknownSubdivisionException>(
-			() => _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S9", Postcode = "1000", Name = "Nowhere" } ) );
+			() => _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S9", Postcode = "1000", Name = "Nowhere", Category = "TOWN" } ) );
 		await Assert.ThrowsAsync<UnknownCountryException>( () => _admin.RetireCountryAsync( "ZY" ) );
 	}
 
@@ -238,14 +290,17 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 	public async Task ImportsStreamTheDatasetWithOptions()
 	{
 		string code = await NewCountryAsync();
-		Dictionary<string, string> options = new() { [ "locality" ] = "suburb", [ "subdivision" ] = "state", [ "delimiter" ] = ";" };
+		Dictionary<string, string> options = new()
+		{
+			[ "locality" ] = "suburb", [ "subdivision" ] = "state", [ "category" ] = "kind", [ "defaultCategory" ] = "TOWN", [ "delimiter" ] = ";"
+		};
 
 		ImportRun run = await _admin.ImportAsync( code, new ImportRequest { Importer = "CSV", Source = "upload.csv", Options = options },
-			new MemoryStream( Encoding.UTF8.GetBytes( "state;postcode;suburb\nS1;1000;Alpha\nS1;1001;Beta\n" ) ) );
+			new MemoryStream( Encoding.UTF8.GetBytes( "state;postcode;suburb;kind\nS1;1000;Alpha;TOWN\nS1;1001;Beta;\n" ) ) );
 
 		DatasetImportException invalid = await Assert.ThrowsAsync<DatasetImportException>(
 			() => _admin.ImportAsync( code, new ImportRequest { Importer = "csv" },
-				new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality\nS1,1000,Alpha\nS9,1001,Beta\n" ) ) ) );
+				new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality,category\nS1,1000,Alpha,TOWN\nS9,1001,Beta,TOWN\n" ) ) ) );
 		UnknownDatasetImporterException importer = await Assert.ThrowsAsync<UnknownDatasetImporterException>(
 			() => _admin.ImportAsync( code, new ImportRequest { Importer = "xml" }, new MemoryStream() ) );
 

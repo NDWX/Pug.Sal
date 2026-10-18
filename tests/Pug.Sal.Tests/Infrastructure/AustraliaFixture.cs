@@ -18,6 +18,9 @@ namespace Pug.Sal.Tests.Infrastructure;
 // - AU-QLD: Spring Creek 4343; Spring Creek 4361 (one name, two postcodes).
 // - AU-JBT: Jervis Bay 2540 (current, under a retired subdivision).
 // NR: Yaren (no subdivision, no postcode).
+// Categories (DECISIONS D28): global SUBURB, TOWN, RURAL and HAMLET (retired). AU has SUBURB, TOWN
+// and RURAL (disabled); NR has TOWN. Sydney, Melbourne, St Kilda and Hume are SUBURBs, Spring Creek
+// 4361 is RURAL, every other locality is a TOWN.
 public sealed class AustraliaFixture : IAsyncLifetime
 {
 	public static readonly DateTime AuVersion = new( 2026, 3, 1, 8, 30, 15, DateTimeKind.Utc );
@@ -49,6 +52,16 @@ public sealed class AustraliaFixture : IAsyncLifetime
 					Retired = Registered.AddDays( 1 )
 				} );
 
+				await session.InsertCategoryAsync( CategoryRecord( "SUBURB", "Suburb" ) );
+				await session.InsertCategoryAsync( CategoryRecord( "TOWN", "Town" ) );
+				await session.InsertCategoryAsync( CategoryRecord( "RURAL", "Rural locality" ) );
+				await session.InsertCategoryAsync( CategoryRecord( "HAMLET", "Hamlet" ) with { Retired = Registered.AddDays( 1 ) } );
+
+				await session.InsertCountryCategoryAsync( CountryCategoryRecord( "AU", "SUBURB" ) );
+				await session.InsertCountryCategoryAsync( CountryCategoryRecord( "AU", "TOWN" ) );
+				await session.InsertCountryCategoryAsync( CountryCategoryRecord( "AU", "RURAL" ) with { Disabled = Registered.AddDays( 4 ) } );
+				await session.InsertCountryCategoryAsync( CountryCategoryRecord( "NR", "TOWN" ) );
+
 				await session.InsertSubdivisionAsync( SubdivisionRecord( "AU-NSW", "New South Wales", SubdivisionTypes.State ) );
 				await session.InsertSubdivisionAsync( SubdivisionRecord( "AU-VIC", "Victoria", SubdivisionTypes.State ) );
 				await session.InsertSubdivisionAsync( SubdivisionRecord( "AU-QLD", "Queensland", SubdivisionTypes.State ) );
@@ -60,17 +73,17 @@ public sealed class AustraliaFixture : IAsyncLifetime
 
 				foreach( Locality locality in new[]
 						{
-							LocalityRecord( "AU", "AU-NSW", "2000", "Sydney" ),
-							LocalityRecord( "AU", "AU-NSW", "2001", "Sydney" ) with { Retired = Registered.AddDays( 3 ) },
+							LocalityRecord( "AU", "AU-NSW", "2000", "Sydney", "SUBURB" ),
+							LocalityRecord( "AU", "AU-NSW", "2001", "Sydney", "SUBURB" ) with { Retired = Registered.AddDays( 3 ) },
 							LocalityRecord( "AU", "AU-NSW", "2620", "Environa" ),
 							LocalityRecord( "AU", "AU-NSW", "2870", "Parkes" ),
 							LocalityRecord( "AU", "AU-NSW", "2650", "Wagga Wagga" ),
-							LocalityRecord( "AU", "AU-ACT", "2620", "Hume" ),
+							LocalityRecord( "AU", "AU-ACT", "2620", "Hume", "SUBURB" ),
 							LocalityRecord( "AU", "AU-ACT", "2600", "Parkes" ),
-							LocalityRecord( "AU", "AU-VIC", "3000", "Melbourne" ),
-							LocalityRecord( "AU", "AU-VIC", "3182", "St Kilda" ),
+							LocalityRecord( "AU", "AU-VIC", "3000", "Melbourne", "SUBURB" ),
+							LocalityRecord( "AU", "AU-VIC", "3182", "St Kilda", "SUBURB" ),
 							LocalityRecord( "AU", "AU-QLD", "4343", "Spring Creek" ),
-							LocalityRecord( "AU", "AU-QLD", "4361", "Spring Creek" ),
+							LocalityRecord( "AU", "AU-QLD", "4361", "Spring Creek", "RURAL" ),
 							LocalityRecord( "AU", "AU-JBT", "2540", "Jervis Bay" ),
 							LocalityRecord( "NR", null, null, "Yaren" )
 						} )
@@ -112,7 +125,7 @@ public sealed class AustraliaFixture : IAsyncLifetime
 			Registration = Registration()
 		};
 
-	private static Locality LocalityRecord( string country, string? subdivision, string? postcode, string name ) =>
+	private static Locality LocalityRecord( string country, string? subdivision, string? postcode, string name, string category = "TOWN" ) =>
 		new()
 		{
 			Definition = new LocalityDefinition
@@ -120,8 +133,15 @@ public sealed class AustraliaFixture : IAsyncLifetime
 				Country = country,
 				Subdivision = subdivision!,
 				Postcode = postcode!,
-				Name = name
+				Name = name,
+				Category = category
 			},
 			Registration = Registration()
 		};
+
+	private static Category CategoryRecord( string code, string name ) =>
+		new() { Definition = new CategoryDefinition { Code = code, Name = name }, Registration = Registration() };
+
+	private static CountryCategory CountryCategoryRecord( string country, string category ) =>
+		new() { Country = country, Category = category, Name = null!, Registration = Registration() };
 }

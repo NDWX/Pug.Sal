@@ -1,16 +1,26 @@
 // A role-to-operation IAuthorizationProvider for a Sal host (sal-host skill). It compiles against
-// Pug.Application.Security 3.1.0 and Pug.Sal.Abstractions. Roles come from the registered
+// Pug.Application.Security 3.1.0 and Pug.Sal.Abstractions. Grants are per resource type: COUNTRY
+// for the reference data, CATEGORY for the global locality category list (DECISIONS D28). Roles come from the registered
 // IPrincipalRoleProvider, e.g. Entra app roles through Pug.Application.Security.AzureADRoleProvider.
 using Pug.Application.Security;
 using Pug.Sal.Abstractions;
 
 public sealed class SalRoleAuthorization : RoleBasedAuthorizationProvider
 {
-	private static readonly Dictionary<string, string[]> Grants = new()
+	private static readonly Dictionary<string, Dictionary<string, string[]>> Grants = new()
 	{
-		[ "Sal.Read" ] = new[] { SecurityOperations.View },
-		[ "Sal.Maintain" ] = new[] { SecurityOperations.View, SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire, SecurityOperations.Delete },
-		[ "Sal.Admin" ] = new[] { SecurityOperations.View, SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire, SecurityOperations.Delete, SecurityOperations.Import }
+		[ SecurityObjectTypes.Country ] = new()
+		{
+			[ "Sal.Read" ] = new[] { SecurityOperations.View },
+			[ "Sal.Maintain" ] = new[] { SecurityOperations.View, SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire, SecurityOperations.Delete },
+			[ "Sal.Admin" ] = new[] { SecurityOperations.View, SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire, SecurityOperations.Delete, SecurityOperations.Import }
+		},
+		[ SecurityObjectTypes.Category ] = new()
+		{
+			[ "Sal.Read" ] = new[] { SecurityOperations.View },
+			[ "Sal.Maintain" ] = new[] { SecurityOperations.View },
+			[ "Sal.Admin" ] = new[] { SecurityOperations.View, SecurityOperations.Create, SecurityOperations.Modify, SecurityOperations.Retire }
+		}
 	};
 
 	public SalRoleAuthorization( IPrincipalRoleProvider roles ) : base( roles ) { }
@@ -25,11 +35,11 @@ public sealed class SalRoleAuthorization : RoleBasedAuthorizationProvider
 		if( principal?.Identity is not { IsAuthenticated: true } || string.IsNullOrEmpty( principal.Identity.Identifier ) )
 			return false;
 
-		if( resource.Type != SecurityObjectTypes.Country )
+		if( !Grants.TryGetValue( resource.Type, out Dictionary<string, string[]>? grants ) )
 			return false;
 
 		IEnumerable<string> held = await RoleProvider.GetPrincipalRolesAsync( principal.Identity.Identifier );
 
-		return held.Any( role => Grants.TryGetValue( role, out string[]? operations ) && operations.Contains( operation ) );
+		return held.Any( role => grants.TryGetValue( role, out string[]? operations ) && operations.Contains( operation ) );
 	}
 }

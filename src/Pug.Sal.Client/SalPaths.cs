@@ -35,6 +35,11 @@ namespace Pug.Sal.Client
 
 		public static string? Flag( bool value ) => value ? "true" : null;
 
+		// A flag whose server default is true: sent only when false.
+		public static string? Unflag( bool value ) => value ? null : "false";
+
+		public static string Category( string root, string category ) => $"{root}categories/{Escape( category )}";
+
 		public static IDictionary<string, string>? LocalityKey( string? subdivision, string? postcode, string? name ) =>
 			Queries( ( "subdivision", subdivision ), ( "postcode", postcode ), ( "name", name ) );
 	}

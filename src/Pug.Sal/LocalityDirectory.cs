@@ -37,10 +37,18 @@ namespace Pug.Sal
 			return new Versioned<SubdivisionInfo> { Value = read.Value.ToInfo(), DatasetVersion = read.DatasetVersion };
 		}
 
+		public async Task<IEnumerable<CategoryInfo>> GetCategoriesAsync( bool includeRetired = false ) =>
+			( await ReadCategoriesAsync( includeRetired ).ConfigureAwait( false ) )
+			.Select( category => category.ToInfo() )
+			.ToList();
+
+		public async Task<Versioned<IEnumerable<CountryCategoryInfo>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true ) =>
+			Project( await ReadCountryCategoriesAsync( country, includeDisabled ).ConfigureAwait( false ), category => category.ToInfo() );
+
 		public async Task<Versioned<IEnumerable<LocalityInfo>>> GetLocalitiesAsync( string country, string subdivision = null!,
 																					string postcode = null!, string name = null!,
-																					bool includeRetired = false ) =>
-			Project( await ReadLocalitiesAsync( country, subdivision, postcode, name, includeRetired ).ConfigureAwait( false ),
+																					string category = null!, bool includeRetired = false ) =>
+			Project( await ReadLocalitiesAsync( country, subdivision, postcode, name, category, includeRetired ).ConfigureAwait( false ),
 					locality => locality.ToInfo() );
 
 		public async Task<Versioned<LocalityInfo>> GetLocalityAsync( string country, string subdivision, string postcode, string name )
@@ -51,8 +59,9 @@ namespace Pug.Sal
 		}
 
 		public async Task<Versioned<IEnumerable<LocalityInfo>>> SearchLocalitiesAsync( string country, string text,
-																						string subdivision = null!, int limit = 20 ) =>
-			Project( await SearchAsync( country, text, subdivision, limit ).ConfigureAwait( false ), locality => locality.ToInfo() );
+																						string subdivision = null!, string category = null!,
+																						int limit = 20 ) =>
+			Project( await SearchAsync( country, text, subdivision, category, limit ).ConfigureAwait( false ), locality => locality.ToInfo() );
 
 		public async Task<ValidationResult> ValidateAsync( AddressCandidate candidate )
 		{
@@ -75,13 +84,17 @@ namespace Pug.Sal
 
 															IEnumerable<Locality> byName = nameKey is null
 																? Enumerable.Empty<Locality>()
-																: await session.GetLocalitiesAsync( code, null, null, nameKey, true ).ConfigureAwait( false );
+																: await session.GetLocalitiesAsync( code, null, null, nameKey, null, true ).ConfigureAwait( false );
 
 															IEnumerable<Locality> byPostcode = postcodeKey is null
 																? Enumerable.Empty<Locality>()
-																: await session.GetLocalitiesAsync( code, null, postcodeKey, null, true ).ConfigureAwait( false );
+																: await session.GetLocalitiesAsync( code, null, postcodeKey, null, null, true ).ConfigureAwait( false );
 
-															return new AddressEvidence( country, subdivisions.ToList(), byName.ToList(), byPostcode.ToList() );
+															IEnumerable<CountryCategory> categories = await session.GetCountryCategoriesAsync( code, true )
+																													.ConfigureAwait( false );
+
+															return new AddressEvidence( country, subdivisions.ToList(), categories.ToList(), byName.ToList(),
+																						byPostcode.ToList() );
 														}
 													)
 													.ConfigureAwait( false );

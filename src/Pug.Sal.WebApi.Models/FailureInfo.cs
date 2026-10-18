@@ -4,7 +4,7 @@ using System.Runtime.Serialization;
 namespace Pug.Sal.WebApi.Models
 {
 	// Body of a 404, 409 or 422 response: which domain failure occurred and what it concerned.
-	// Pug.Sal.Client rebuilds the facade's exception from it (Unknown*Exception, DuplicateEntryException,
+	// Pug.Sal.Client rebuilds the facade's exception from it (Unknown*Exception, UnknownCategoryException, DuplicateEntryException,
 	// UnknownDatasetImporterException, DatasetImportException). Only the members its Type uses are set.
 	[DataContract]
 	public record FailureInfo
@@ -57,6 +57,19 @@ namespace Pug.Sal.WebApi.Models
 
 		[DataMember]
 		public string Postcode
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
+		// Category code, for UNKNOWN_CATEGORY (with Country when the category is not assigned to it;
+		// without when the global category is unknown).
+		[DataMember]
+		public string Category
 		{
 			get;
 #if NET5_0_OR_GREATER

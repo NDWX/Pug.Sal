@@ -12,6 +12,9 @@ namespace Pug.Sal.WebApi.Models
 		// 404.
 		public const string UnknownLocality = "UNKNOWN_LOCALITY";
 
+		// 404.
+		public const string UnknownCategory = "UNKNOWN_CATEGORY";
+
 		// 409.
 		public const string DuplicateEntry = "DUPLICATE_ENTRY";
 

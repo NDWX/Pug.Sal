@@ -7,12 +7,14 @@ using static System.String;
 
 namespace Pug.Sal.Data.SQLite
 {
-	// The Sal store: country, subdivision, locality and import run tables. "None" in a locality's
+	// The Sal store: country, category, country category, subdivision, locality and import run
+	// tables (category: DECISIONS D28; no foreign key from a locality to its country category, as
+	// none to its subdivision, D27). "None" in a locality's
 	// key columns (subdivision, postcodeKey) is stored as '' so both are plain not-null primary-key
 	// columns, with the same semantics as the Postgres store (DECISIONS D15).
 	//
 	// Version-valued columns (country.currentVersion, importRun.datasetVersion, locality.stamped),
-	// and retired (always an action timestamp, so a version, D19), are TEXT in
+	// and retired and disabled (always action timestamps, so versions, D19), are TEXT in
 	// DatasetVersions.TextFormat: the UTC timestamp's digits to the tick, fixed width, so they are
 	// exact and `stamped < @timestamp` is a correct text comparison (DECISIONS D6). The
 	// ActionContext columns are JSON, where the timestamp is ISO-8601 with a 'Z'.
@@ -56,6 +58,29 @@ namespace Pug.Sal.Data.SQLite
 									@"drop table country;"
 								),
 							new UpgradeScript(
+									"Category table", Empty,
+									@"create table category(
+											    code text not null primary key,
+											    name text not null,
+											    retired text,
+											    registration text not null,
+											    lastUpdate text
+											);",
+									@"drop table category;"
+								),
+							new UpgradeScript(
+									"Country category table", Empty,
+									@"create table countryCategory(
+											    country text not null references country(code),
+											    category text not null references category(code),
+											    disabled text,
+											    registration text not null,
+											    lastUpdate text,
+											    primary key( country, category )
+											);",
+									@"drop table countryCategory;"
+								),
+							new UpgradeScript(
 									"Subdivision table", Empty,
 									@"create table subdivision(
 											    country text not null references country(code),
@@ -82,11 +107,13 @@ namespace Pug.Sal.Data.SQLite
 											    registration text not null,
 											    lastUpdate text,
 											    stamped text not null,
+											    category text not null,
 											    primary key( country, subdivision, postcodeKey, nameKey )
 											);
 											create index ixLocalityName on locality(country, nameKey);
 											create index ixLocalityPostcode on locality(country, postcodeKey);
-											create index ixLocalityStamped on locality(country, stamped);",
+											create index ixLocalityStamped on locality(country, stamped);
+											create index ixLocalityCategory on locality(country, category);",
 									@"drop table locality;"
 								),
 							new UpgradeScript(
@@ -99,6 +126,7 @@ namespace Pug.Sal.Data.SQLite
 											    added integer not null,
 											    reinstated integer not null,
 											    deleted integer not null,
+											    recategorized integer not null,
 											    unchanged integer not null,
 											    datasetVersion text not null,
 											    performed text not null

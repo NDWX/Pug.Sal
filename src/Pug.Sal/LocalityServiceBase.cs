@@ -31,11 +31,15 @@ namespace Pug.Sal
 			Normalizer = normalizer ?? throw new ArgumentNullException( nameof(normalizer) );
 		}
 
-		// Every check is against ResourceQualifiers.AllCountries (D8). Unlike Pug.Scheduling's
+		// Every check is against ResourceQualifiers.AllCountries (D8), except the global category
+		// list's, against ResourceQualifiers.AllCategories (D28). Unlike Pug.Scheduling's
 		// coordinator, a missing principal is refused, never trusted, and so is an unauthenticated one
 		// (identity accessors may return an anonymous principal rather than none): neither reaches the
 		// authorization provider.
-		protected async Task CheckAuthorizationAsync( string operation )
+		protected Task CheckAuthorizationAsync( string operation ) =>
+			CheckAuthorizationAsync( operation, ResourceQualifiers.AllCountries );
+
+		protected async Task CheckAuthorizationAsync( string operation, NounQualifier resource )
 		{
 			IPrincipal? principal = SecurityManager.CurrentPrincipal;
 
@@ -45,7 +49,7 @@ namespace Pug.Sal
 			bool isAuthorized = await principal.IsAuthorizedAsync(
 												new Dictionary<string, string>( 0 ),
 												operation,
-												ResourceQualifiers.AllCountries,
+												resource,
 												string.Empty
 											)
 											.ConfigureAwait( false );
@@ -63,7 +67,8 @@ namespace Pug.Sal
 			return country.Trim().ToUpperInvariant();
 		}
 
-		// An optional subdivision code: null when blank, otherwise trimmed and matched exactly.
+		// An optional subdivision or category code: null when blank, otherwise trimmed and matched
+		// exactly.
 		protected static string? OptionalCode( string? code ) =>
 			string.IsNullOrWhiteSpace( code ) ? null : code.Trim();
 
@@ -181,11 +186,33 @@ namespace Pug.Sal
 			return new Versioned<Subdivision> { Value = read.Value, DatasetVersion = read.DatasetVersion };
 		}
 
-		// Filters are applied only when given: subdivision by code, postcode and name by their
-		// normalized forms.
+		protected async Task<IEnumerable<Category>> ReadCategoriesAsync( bool includeRetired )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.View, ResourceQualifiers.AllCategories ).ConfigureAwait( false );
+
+			return await ApplicationDataProvider.ReadAsync(
+							async ( session, context ) =>
+								await session.GetCategoriesAsync( context.includeRetired ).ConfigureAwait( false ),
+							context: new { includeRetired }
+						)
+						.ConfigureAwait( false );
+		}
+
+		protected async Task<Versioned<IEnumerable<CountryCategory>>> ReadCountryCategoriesAsync( string country, bool includeDisabled )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.View ).ConfigureAwait( false );
+
+			string code = CountryCode( country );
+
+			return await ReadVersionedAsync( code, ( session, _ ) => session.GetCountryCategoriesAsync( code, includeDisabled ) )
+						.ConfigureAwait( false );
+		}
+
+		// Filters are applied only when given: subdivision and category by code, postcode and name
+		// by their normalized forms.
 		protected async Task<Versioned<IEnumerable<Locality>>> ReadLocalitiesAsync( string country, string? subdivision,
 																					string? postcode, string? name,
-																					bool includeRetired )
+																					string? category, bool includeRetired )
 		{
 			await CheckAuthorizationAsync( SecurityOperations.View ).ConfigureAwait( false );
 
@@ -193,10 +220,11 @@ namespace Pug.Sal
 			string? subdivisionCode = OptionalCode( subdivision );
 			string? postcodeKey = Normalizer.NormalizePostcode( postcode! );
 			string? nameKey = NameKey( name );
+			string? categoryCode = OptionalCode( category );
 
 			return await ReadVersionedAsync(
 							code,
-							( session, _ ) => session.GetLocalitiesAsync( code, subdivisionCode, postcodeKey, nameKey, includeRetired )
+							( session, _ ) => session.GetLocalitiesAsync( code, subdivisionCode, postcodeKey, nameKey, categoryCode, includeRetired )
 						)
 						.ConfigureAwait( false );
 		}
@@ -221,7 +249,8 @@ namespace Pug.Sal
 
 		// Prefix search on the normalized name over current localities; limit is capped at
 		// MaximumSearchLimit.
-		protected async Task<Versioned<IEnumerable<Locality>>> SearchAsync( string country, string text, string? subdivision, int limit )
+		protected async Task<Versioned<IEnumerable<Locality>>> SearchAsync( string country, string text, string? subdivision,
+																			string? category, int limit )
 		{
 			await CheckAuthorizationAsync( SecurityOperations.View ).ConfigureAwait( false );
 
@@ -232,11 +261,12 @@ namespace Pug.Sal
 				throw new ArgumentOutOfRangeException( nameof(limit), limit, "The limit must be at least 1." );
 
 			string? subdivisionCode = OptionalCode( subdivision );
+			string? categoryCode = OptionalCode( category );
 			int capped = Math.Min( limit, MaximumSearchLimit );
 
 			return await ReadVersionedAsync(
 							code,
-							( session, _ ) => session.SearchLocalitiesAsync( code, prefix, subdivisionCode, capped )
+							( session, _ ) => session.SearchLocalitiesAsync( code, prefix, subdivisionCode, categoryCode, capped )
 						)
 						.ConfigureAwait( false );
 		}

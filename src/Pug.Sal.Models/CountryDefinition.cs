@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Runtime.Serialization;
 
@@ -71,6 +72,20 @@ namespace Pug.Sal.Models
 		// no subdivision and validation treats the subdivision component as NOT_APPLICABLE.
 		[Required, DataMember( IsRequired = true )]
 		public bool HasSubdivisions
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
+		// Codes of the current global categories assigned to the country when it is created; at
+		// least one. Read only by CreateCountryAsync, and null in what reads return: afterwards a
+		// country's categories are managed with the country category operations (DECISIONS D28).
+		[DataMember]
+		public IEnumerable<string> Categories
 		{
 			get;
 #if NET5_0_OR_GREATER

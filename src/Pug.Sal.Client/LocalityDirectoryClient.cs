@@ -42,11 +42,20 @@ namespace Pug.Sal.Client
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<SubdivisionInfo>>(
 				$"{Country( _root, country )}/subdivisions/{Escape( subdivision )}" ) );
 
+		public Task<IEnumerable<CategoryInfo>> GetCategoriesAsync( bool includeRetired = false ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<CategoryInfo>>(
+				$"{_root}categories", queries: Queries( ( "includeRetired", Flag( includeRetired ) ) ) ) );
+
+		public Task<Versioned<IEnumerable<CountryCategoryInfo>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<CountryCategoryInfo>>>(
+				$"{Country( _root, country )}/categories", queries: Queries( ( "includeDisabled", Unflag( includeDisabled ) ) ) ) );
+
 		public Task<Versioned<IEnumerable<LocalityInfo>>> GetLocalitiesAsync( string country, string subdivision = null!, string postcode = null!,
-																			string name = null!, bool includeRetired = false ) =>
+																			string name = null!, string category = null!,
+																			bool includeRetired = false ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<LocalityInfo>>>(
 				$"{Country( _root, country )}/localities",
-				queries: Queries( ( "subdivision", subdivision ), ( "postcode", postcode ), ( "name", name ),
+				queries: Queries( ( "subdivision", subdivision ), ( "postcode", postcode ), ( "name", name ), ( "category", category ),
 								( "includeRetired", Flag( includeRetired ) ) ) ) );
 
 		public Task<Versioned<LocalityInfo>> GetLocalityAsync( string country, string subdivision, string postcode, string name ) =>
@@ -54,10 +63,10 @@ namespace Pug.Sal.Client
 				$"{Country( _root, country )}/locality", queries: LocalityKey( subdivision, postcode, name ) ) );
 
 		public Task<Versioned<IEnumerable<LocalityInfo>>> SearchLocalitiesAsync( string country, string text, string subdivision = null!,
-																				int limit = 20 ) =>
+																				string category = null!, int limit = 20 ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<LocalityInfo>>>(
 				$"{Country( _root, country )}/localities/search",
-				queries: Queries( ( "text", text ), ( "subdivision", subdivision ),
+				queries: Queries( ( "text", text ), ( "subdivision", subdivision ), ( "category", category ),
 								( "limit", limit.ToString( CultureInfo.InvariantCulture ) ) ) ) );
 
 		public Task<ValidationResult> ValidateAsync( AddressCandidate candidate ) =>

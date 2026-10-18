@@ -33,6 +33,8 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 		{ "SalGetLocalities", new[] { 200, 304, 403, 404 } },
 		{ "SalGetLocality", new[] { 200, 304, 400, 403, 404 } },
 		{ "SalValidate", new[] { 200, 400, 403, 404 } },
+		{ "SalGetCategories", new[] { 200, 403 } },
+		{ "SalGetCountryCategories", new[] { 200, 304, 403, 404 } },
 		{ "SalAdminGetCountries", new[] { 200, 304, 403 } },
 		{ "SalAdminGetCountryVersions", new[] { 200, 304, 403 } },
 		{ "SalAdminGetCountry", new[] { 200, 304, 403, 404 } },
@@ -54,7 +56,18 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 		{ "SalAdminRetireLocality", new[] { 200, 400, 403, 404 } },
 		{ "SalAdminReinstateLocality", new[] { 200, 400, 403, 404 } },
 		{ "SalAdminDeleteLocality", new[] { 200, 400, 403, 404 } },
-		{ "SalAdminImport", new[] { 200, 400, 403, 404, 415, 422 } }
+		{ "SalAdminImport", new[] { 200, 400, 403, 404, 415, 422 } },
+		{ "SalAdminGetCategories", new[] { 200, 403 } },
+		{ "SalAdminGetCategory", new[] { 200, 403, 404 } },
+		{ "SalAdminGetCountryCategories", new[] { 200, 304, 403, 404 } },
+		{ "SalAdminCreateCategory", new[] { 201, 400, 403, 409 } },
+		{ "SalAdminUpdateCategory", new[] { 200, 400, 403, 404 } },
+		{ "SalAdminRetireCategory", new[] { 200, 403, 404 } },
+		{ "SalAdminReinstateCategory", new[] { 200, 403, 404 } },
+		{ "SalAdminAssignCategory", new[] { 200, 400, 403, 404 } },
+		{ "SalAdminUnassignCategory", new[] { 200, 400, 403, 404 } },
+		{ "SalAdminDisableCategory", new[] { 200, 400, 403, 404 } },
+		{ "SalAdminEnableCategory", new[] { 200, 400, 403, 404 } }
 	};
 
 	private RouteEndpoint Named( string name ) =>

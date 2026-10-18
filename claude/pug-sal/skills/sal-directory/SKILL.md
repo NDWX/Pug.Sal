@@ -1,6 +1,6 @@
 ---
 name: sal-directory
-description: Use when an application reads from Pug.Sal or validates addresses against it, i.e. calling ILocalityDirectory in-process or over HTTP with LocalityDirectoryClient, interpreting ValidationResult (outcomes, Match, Suggestions), building suburb/postcode autocomplete, listing countries, subdivisions and localities, or caching reference data by dataset version.
+description: Use when an application reads from Pug.Sal or validates addresses against it, i.e. calling ILocalityDirectory in-process or over HTTP with LocalityDirectoryClient, interpreting ValidationResult (outcomes, Match, Suggestions), building suburb/postcode autocomplete, listing countries, subdivisions, locality categories and localities, or caching reference data by dataset version.
 ---
 
 # Reading from Pug.Sal and validating addresses
@@ -10,7 +10,9 @@ description: Use when an application reads from Pug.Sal or validates addresses a
 - **in-process**, `LocalityDirectory`, when your application hosts Sal (`AddSal()`; see `sal-host`);
 - **over HTTP**, `LocalityDirectoryClient` (`Pug.Sal.Client`), against a host that maps the directory endpoints (under `directory/` unless the host chose another prefix).
 
-Code against the interface, and choose the implementation in DI. Results are the audit-free `CountryInfo`, `SubdivisionInfo` and `LocalityInfo`. Writes and audit fields are in `sal-administration`.
+Code against the interface, and choose the implementation in DI. Results are the audit-free `CountryInfo`, `SubdivisionInfo`, `LocalityInfo`, `CategoryInfo` and `CountryCategoryInfo`. Writes and audit fields are in `sal-administration`.
+
+Every locality has a **category** (`LocalityInfo.Definition.Category`, a code such as `SUBURB` or `TOWN`). The list of categories is global and maintained by the data's maintainer. Each country has a subset of it assigned, some of which may be disabled: a disabled category is still held by older localities but given to no new ones.
 
 ## Calling Sal over HTTP
 
@@ -36,7 +38,7 @@ services.AddSingleton<ILocalityDirectory>( p => new LocalityDirectoryClient( p.G
 
 - **Route prefix.** The client must use the prefix the host mapped the directory under (`SalApiOptions.RoutePrefix`, default `directory`). It is relative to the base address, so `new Uri( "https://example.com/api/" )` with `"sal"` calls `https://example.com/api/sal/countries`. Keep a trailing slash on a base address that has a path. A wrong prefix shows up as 404.
 
-- **Permissions.** Every call, reads included, needs the `VIEW` permission for the caller on the server. Which roles grant it is the host's choice.
+- **Permissions.** Every call, reads included, needs the `VIEW` permission for the caller on the server. `GetCategoriesAsync` (the global list) is checked on the `CATEGORY` resource rather than `COUNTRY`, so a host may grant it separately. Which roles grant them is the host's choice.
 - **Scopes.** If the host requires OAuth scopes on the directory (D23), the token must carry one of them in `scp`/`scope`. **Entra app-only tokens (client credentials) carry `roles`, not `scp`**, so a service caller is refused (403) by a scope requirement. Agree with the host on a policy based on app roles for service callers.
 
 ## Operations
@@ -48,15 +50,18 @@ services.AddSingleton<ILocalityDirectory>( p => new LocalityDirectoryClient( p.G
 | `GetCountryAsync( country )` | `CountryInfo` | Its `Definition` holds `PostcodePattern`, `PostcodeRequired` and `HasSubdivisions`, which are useful for form rules |
 | `GetSubdivisionsAsync( country, includeRetired )` | `Versioned<SubdivisionInfo[]>` | By code |
 | `GetSubdivisionAsync( country, code )` | `Versioned<SubdivisionInfo>` | Matched by **code** only |
-| `GetLocalitiesAsync( country, subdivision?, postcode?, name?, includeRetired )` | `Versioned<LocalityInfo[]>` | Any combination of filters. Name and postcode are matched on normalized forms (`"st kilda"` finds `St Kilda`). With no filter, it returns the whole country |
+| `GetCategoriesAsync( includeRetired )` | `CategoryInfo[]` | The global category list, by code. No dataset version |
+| `GetCountryCategoriesAsync( country, includeDisabled = true )` | `Versioned<CountryCategoryInfo[]>` | The categories assigned to the country, each with its `Name` and `Disabled` (null while enabled). Use it to offer a category filter |
+| `GetLocalitiesAsync( country, subdivision?, postcode?, name?, category?, includeRetired )` | `Versioned<LocalityInfo[]>` | Any combination of filters. Name and postcode are matched on normalized forms (`"st kilda"` finds `St Kilda`); the category code exactly. With no filter, it returns the whole country |
 | `GetLocalityAsync( country, subdivision, postcode, name )` | `Versioned<LocalityInfo>` | By full key. Pass null for an absent subdivision or postcode |
-| `SearchLocalitiesAsync( country, text, subdivision?, limit = 20 )` | `Versioned<LocalityInfo[]>` | Autocomplete: current localities whose normalized name **starts with** the text, best first. Postgres stores also append close fuzzy matches. `limit` must be ≥ 1 and is capped at 100. Empty text is an `ArgumentException` |
+| `SearchLocalitiesAsync( country, text, subdivision?, category?, limit = 20 )` | `Versioned<LocalityInfo[]>` | Autocomplete: current localities whose normalized name **starts with** the text, optionally in one subdivision and one category, best first. Postgres stores also append close fuzzy matches. `limit` must be ≥ 1 and is capped at 100. Empty text is an `ArgumentException` |
 | `ValidateAsync( AddressCandidate )` | `ValidationResult` | See below |
 
 **Input forms:**
 
 - **Country codes** are ISO 3166-1 alpha-2, trimmed and upper-cased, so `" au "` works.
-- **Subdivision codes** in lookups and filters are matched exactly, after trimming. Validation is more lenient.
+- **Subdivision and category codes** in lookups and filters are matched exactly, after trimming. Validation is more lenient.
+- **`limit` is positional after `category`.** Pass the optional filters by name (`category: "SUBURB"`, `limit: 10`).
 - **Listings omit retired records** unless you pass `includeRetired`. Single-record lookups always return them; check `Retired`.
 
 ## Validation
@@ -66,22 +71,23 @@ ValidationResult r = await directory.ValidateAsync( new AddressCandidate
 	{ Country = "AU", Subdivision = "nsw", Locality = "sydney", Postcode = "2000" } );
 ```
 
-Sal validates **each component on its own, then the combination, and never corrects anything**. Each of `r.Country`, `r.Subdivision`, `r.Locality` and `r.Postcode` is a `ComponentValidation { Outcome, Canonical }`, and `r.Combination` is an outcome too.
+Sal validates **each component on its own, then the combination, and never corrects anything**. Each of `r.Country`, `r.Subdivision`, `r.Locality`, `r.Postcode` and `r.Category` is a `ComponentValidation { Outcome, Canonical }`, and `r.Combination` is an outcome too.
 
 | Outcome (`ValidationOutcomes`) | Meaning |
 |---|---|
 | `VALID` | Matches a current record. `Canonical` is Sal's spelling or code |
-| `RETIRED` | Matches only a retired record |
+| `RETIRED` | Matches only a retired record, or (for the category) a category disabled in the country |
 | `UNKNOWN` | Sal holds no such record |
 | `MISSING` | The country requires it, and it wasn't given (for example the postcode when `PostcodeRequired`) |
 | `MALFORMED` | It doesn't have the country's shape (the postcode fails `PostcodePattern`) |
-| `NOT_APPLICABLE` | The country doesn't use it (no subdivisions), or an optional postcode was left blank. A given value is ignored |
+| `NOT_APPLICABLE` | The country doesn't use it (no subdivisions), or an optional postcode or the category was left blank. A given value is ignored |
 | `NOT_CHECKED` | Not evaluated, because something it depends on already failed |
 | `MISMATCH` | **Combination only:** each part exists, but they don't belong together |
 
 - **`IsValid`** is true only when every component and the combination are `VALID` or `NOT_APPLICABLE`. **`RETIRED` makes it false.** Decide for yourself whether to accept a retired address, for example on an existing record but not on a new one.
 - **The subdivision** may be given as its code (`NSW`) or its name (`New South Wales`), case-insensitively. Where a maintainer registered codes with the country prefix (`AU-NSW`), the part after it (`NSW`) also matches.
-- **`Match`** is set only when the result is valid. It is the candidate in canonical form, for example `Sydney`, `NSW`, `2000`. **Store `Match`, not what the user typed**, so your data uses Sal's codes and spellings. If the user gave no postcode, `Match.Postcode` stays null, because Sal won't fill one in.
+- **The category is optional.** Leave `Category` blank to ignore it. When given, as its code (`SUBURB`) or name (`Suburb`), case-insensitively, it is matched among the country's categories, and the combination must have it: Sydney given as a `TOWN` when Sal holds it as a `SUBURB` is a `MISMATCH`, with the `SUBURB` record among the suggestions.
+- **`Match`** is set only when the result is valid. It is the candidate in canonical form, for example `Sydney`, `NSW`, `2000`, and always carries the locality's `Category`. **Store `Match`, not what the user typed**, so your data uses Sal's codes and spellings. If the user gave no postcode, `Match.Postcode` stays null, because Sal won't fill one in.
 - **`Suggestions`** are up to 10 valid combinations close to the candidate, for example the locality under its real postcodes, or the localities of the given postcode. They are empty when the address is valid, and for a retired country. Present them as choices. Never apply one silently.
 - **`DatasetVersion`** is the country version the result was computed against. Record it if you later need to show that an address was valid when you accepted it.
 
@@ -113,7 +119,7 @@ The same exceptions are thrown in-process and over HTTP:
 |---|---|---|
 | `Pug.Sal.Abstractions.AccessDeniedException` | The caller lacks `VIEW` (or fails the host's scope or policy). In-process, `Operation` names the refused permission. Over HTTP it is null | 403 |
 | `System.Security.Authentication.AuthenticationException` | No or invalid credentials. HTTP only | 401 |
-| `UnknownCountryException` | The country doesn't exist (validation included) | 404 |
+| `UnknownCountryException` | The country doesn't exist (validation included, and `GetCountryCategoriesAsync`) | 404 |
 | `UnknownSubdivisionException`, `UnknownLocalityException` | A single-record lookup found nothing. Listings and filters just return empty | 404 |
 | `ArgumentException` (including `ArgumentOutOfRangeException`) | Blank required input, empty search text, or `limit` < 1 | 400 |
 

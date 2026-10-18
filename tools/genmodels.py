@@ -55,7 +55,8 @@ record("CountryDefinition",
 		("string", "PostcodePattern", False, "Regular expression a postcode of this country must fully match; null accepts any non-empty postcode."),
 		("bool", "PostcodeRequired", True, "Whether an address in this country must carry a postcode."),
 		("bool", "HasSubdivisions", True, "Whether localities of this country sit under a subdivision. When false, localities carry no subdivision and validation treats the subdivision component as NOT_APPLICABLE."),
-	])
+		("IEnumerable<string>", "Categories", False, "Codes of the current global categories assigned to the country when it is created; at least one. Read only by CreateCountryAsync, and null in what reads return: afterwards a country's categories are managed with the country category operations (DECISIONS D28)."),
+	], G)
 
 COUNTRY = [
 	("CountryDefinition", "Definition", True, None),
@@ -76,6 +77,41 @@ record("CountryVersion",
 		("string", "Country", True, "ISO 3166-1 alpha-2."),
 		("DateTime", "Version", True, "UTC."),
 	], S)
+
+record("CategoryDefinition",
+	"Maintainer-authored description of a global locality category. Code is the key and is immutable once created; a category is assigned to a country before its localities can use it (DECISIONS D28).",
+	[
+		("string", "Code", True, "Maintainer-defined and matched exactly."),
+		("string", "Name", True, None),
+	])
+
+CATEGORY = [
+	("CategoryDefinition", "Definition", True, None),
+	("DateTime?", "Retired", False, "Null while current. A retired category can no longer be assigned to a country, or enabled in one; countries that have it keep it."),
+]
+
+record("CategoryInfo",
+	"A global category as ILocalityDirectory publishes it: without the audit contexts, which only Category (from ILocalityAdministration) carries.",
+	CATEGORY, S)
+
+record("Category",
+	"A global category with everything Sal maintains for it, audit contexts included, as ILocalityAdministration returns it. Project it to CategoryInfo with ToInfo().",
+	CATEGORY + AUDIT, S + E)
+
+COUNTRY_CATEGORY = [
+	("string", "Country", True, "ISO 3166-1 alpha-2."),
+	("string", "Category", True, "Code of the global category."),
+	("string", "Name", True, "The global category's name, as it is now."),
+	("DateTime?", "Disabled", False, "Null while enabled. Localities can be created or imported only under an enabled category; a disabled one is still held by the localities that had it, unless they were moved to a replacement."),
+]
+
+record("CountryCategoryInfo",
+	"A category assigned to a country, as ILocalityDirectory publishes it: without the audit contexts, which only CountryCategory (from ILocalityAdministration) carries.",
+	COUNTRY_CATEGORY, S)
+
+record("CountryCategory",
+	"A category assigned to a country, audit contexts included, as ILocalityAdministration returns it. Project it to CountryCategoryInfo with ToInfo().",
+	COUNTRY_CATEGORY + AUDIT, S + E)
 
 record("SubdivisionDefinition",
 	"Maintainer-authored description of a state, territory, province or similar. (Country, Code) is the key and is immutable once created.",
@@ -99,12 +135,13 @@ record("Subdivision",
 	SUBDIVISION + AUDIT, S + E)
 
 record("LocalityDefinition",
-	"Maintainer-authored description of one locality/postcode pair. (Country, Subdivision, normalized Postcode, normalized Name) is the key: a suburb served by several postcodes is one record per postcode, and same-named places within a subdivision are told apart by postcode. A locality is never updated: a correction is a delete and a create.",
+	"Maintainer-authored description of one locality/postcode pair. (Country, Subdivision, normalized Postcode, normalized Name) is the key: a suburb served by several postcodes is one record per postcode, and same-named places within a subdivision are told apart by postcode. A locality is never updated, except for its Category: a correction is a delete and a create.",
 	[
 		("string", "Country", True, "ISO 3166-1 alpha-2 of the owning country."),
 		("string", "Subdivision", False, "Code of the owning subdivision; required when the country HasSubdivisions, and must be null otherwise."),
 		("string", "Postcode", False, "Unique only within the country; matching uses its normalized form. Required when the country's PostcodeRequired; null in countries without postcodes."),
 		("string", "Name", True, "Display name, stored as given; matching uses its normalized form."),
+		("string", "Category", True, "Code of a category assigned to the country, which must be enabled when the locality is created. Not part of the key: it changes only when its category is disabled with a replacement, or by an import (DECISIONS D28)."),
 	])
 
 LOCALITY = [
@@ -136,6 +173,7 @@ record("AddressCandidate",
 		("string", "Subdivision", False, "Subdivision code or name."),
 		("string", "Locality", False, None),
 		("string", "Postcode", False, None),
+		("string", "Category", False, "Category code or name; optional. When given, validation checks it and the combination must have it."),
 	])
 
 record("ComponentValidation",
@@ -153,6 +191,7 @@ record("ValidationResult",
 		("ComponentValidation", "Subdivision", True, None),
 		("ComponentValidation", "Locality", True, None),
 		("ComponentValidation", "Postcode", True, None),
+		("ComponentValidation", "Category", True, "NOT_APPLICABLE when the candidate gives no category; RETIRED when it names a disabled one."),
 		("string", "Combination", True, "VALID, MISMATCH when the components exist but do not belong together, or NOT_CHECKED when a component already failed."),
 		("AddressCandidate", "Match", False, "The matched combination, in canonical form, when IsValid; null otherwise."),
 		("IEnumerable<AddressCandidate>", "Suggestions", True, "Valid combinations close to the candidate (e.g. the locality under its actual postcodes); empty when IsValid or when Sal has none."),
@@ -173,6 +212,7 @@ record("ImportRow",
 		("string", "Subdivision", False, "Code of an existing subdivision, current or retired; required when the country HasSubdivisions and must be null otherwise. An unknown subdivision fails the whole import: imports never create subdivisions. A retired one is accepted and stays retired."),
 		("string", "Locality", True, None),
 		("string", "Postcode", False, None),
+		("string", "Category", True, "Code of a category assigned to the country and enabled; a missing, unknown or disabled one fails the whole import. A row repeating an earlier row's key must give the same category."),
 	])
 
 record("ImportRun",
@@ -185,20 +225,23 @@ record("ImportRun",
 		("int", "Added", True, "Localities created."),
 		("int", "Reinstated", True, "Retired localities the dataset holds, made current again."),
 		("int", "Deleted", True, "Localities deleted because the dataset no longer contains them."),
-		("int", "Unchanged", True, "Current localities the dataset holds; only their LastUpdate is re-stamped."),
+		("int", "Recategorized", True, "Current localities the dataset holds under a different category, which it changed to the dataset's."),
+		("int", "Unchanged", True, "Current localities the dataset holds under the same category; only their LastUpdate is re-stamped."),
 		("DateTime", "DatasetVersion", True, "UTC country dataset version the import produced, and the timestamp of Performed, Registration of every locality it created and LastUpdate of every locality it holds. Every import bumps it."),
 		("ActionContext<Reference>", "Performed", True, None),
 	], S + E)
 
 record("LocalityChange",
-	"A committed register, update, retire, reinstate or delete made through the admin API, published to the host's ILocalityChangeEventPublisher for audit. An import is a different event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.",
+	"A committed register, update, retire, reinstate or delete made through the admin API (an assignment or unassignment of a country category included), published to the host's ILocalityChangeEventPublisher for audit. An import is a different event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.",
 	[
-		("string", "Country", True, None),
+		("string", "Country", False, "Null for a global category change; the country otherwise."),
 		("string", "EntityType", True, "One of ChangeEntityTypes."),
 		("string", "Subdivision", False, "For a locality change, the locality's subdivision code (null in countries without subdivisions); null otherwise."),
 		("string", "Postcode", False, "For a locality change, the locality's postcode (null when it has none); null otherwise."),
-		("string", "Key", True, "Per EntityType: the country code, the subdivision code, or the locality name."),
+		("string", "Category", False, "For a locality change, the locality's category code; null otherwise."),
+		("string", "Key", True, "Per EntityType: the country code, the subdivision code, the locality name, or the category code."),
+		("string", "Replacement", False, "For a country category disabled with a replacement, the category its localities were moved to; null otherwise."),
 		("string", "Kind", True, "One of ChangeKinds."),
 		("ActionContext<Reference>", "Performed", True, None),
-		("DateTime", "DatasetVersion", True, "UTC country dataset version the change produced."),
+		("DateTime", "DatasetVersion", True, "UTC country dataset version the change produced; for a global category change, which has no country, the change's timestamp."),
 	], S + E)

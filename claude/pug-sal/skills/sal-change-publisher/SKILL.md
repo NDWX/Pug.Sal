@@ -17,18 +17,19 @@ public interface ILocalityChangeEventPublisher
 
 ## What is published
 
-- **`PublishAsync( LocalityChange )`** is called once for each create, update, retire, reinstate or delete made through `ILocalityAdministration`, on a country, subdivision or locality. The fields:
-  - `Country`;
-  - `EntityType` (`ChangeEntityTypes`);
-  - `Key`, which is the country code, the subdivision code or the locality name, depending on `EntityType`;
-  - for a locality, `Subdivision` and `Postcode`;
-  - `Kind` (`ChangeKinds`);
+- **`PublishAsync( LocalityChange )`** is called once for each create, update, retire, reinstate or delete made through `ILocalityAdministration`, on a country, subdivision, locality, global category or country category (DECISIONS D28). The fields:
+  - `Country`, **null for a global category change** (`EntityType = CATEGORY`), which belongs to no country;
+  - `EntityType` (`ChangeEntityTypes`): `COUNTRY`, `SUBDIVISION`, `LOCALITY`, `CATEGORY` or `COUNTRY_CATEGORY`;
+  - `Key`, which is the country code, the subdivision code, the locality name or the category code, depending on `EntityType`;
+  - for a locality, `Subdivision`, `Postcode` and `Category`;
+  - `Kind` (`ChangeKinds`). For a country category it is `CREATED` (assigned, including each first category of a new country), `DELETED` (unassigned), `RETIRED` (disabled) or `REINSTATED` (enabled);
+  - `Replacement`, for a country category disabled with a replacement: the category its localities moved to. **The moved localities publish no change of their own**, as an import's rows don't;
   - `Performed`, an `ActionContext<Reference>` holding who and when;
-  - `DatasetVersion`, the country version the write produced.
-- **`PublishImportAsync( ImportRun )`** is called once per import, with the stored run as the payload: identifier, country, importer, source, `Added`, `Reinstated`, `Deleted`, `Unchanged`, `DatasetVersion` and `Performed`. **An import publishes no `LocalityChange` for its rows.** A consumer that needs row-level detail re-reads the country at the new `DatasetVersion`.
+  - `DatasetVersion`, the country version the write produced; for a global category change, its timestamp.
+- **`PublishImportAsync( ImportRun )`** is called once per import, with the stored run as the payload: identifier, country, importer, source, `Added`, `Reinstated`, `Recategorized`, `Deleted`, `Unchanged`, `DatasetVersion` and `Performed`. **An import publishes no `LocalityChange` for its rows.** A consumer that needs row-level detail re-reads the country at the new `DatasetVersion`.
 - **Reads publish nothing.**
 
-`DatasetVersion` strictly increases per country. Consumers use it to order events and to discard stale ones, and a cache keyed by country version can be invalidated with it. Events for different countries are unordered relative to one another.
+`DatasetVersion` strictly increases per country. Partition by `Country ?? Key` if your broker needs a key for every event. Consumers use it to order events and to discard stale ones, and a cache keyed by country version can be invalidated with it. Events for different countries are unordered relative to one another.
 
 ## Delivery guarantees, and what follows from them
 
@@ -58,7 +59,7 @@ public sealed class ServiceBusChangePublisher : ILocalityChangeEventPublisher
 	public ServiceBusChangePublisher( ServiceBusSender sender ) => _sender = sender;
 
 	public Task PublishAsync( LocalityChange change ) =>
-		_sender.SendMessageAsync( Message( "locality-change", change.Country, change ) );
+		_sender.SendMessageAsync( Message( "locality-change", change.Country ?? change.Key, change ) );   // global category changes have no country
 
 	public Task PublishImportAsync( ImportRun run ) =>
 		_sender.SendMessageAsync( Message( "import-run", run.Country, run ) );

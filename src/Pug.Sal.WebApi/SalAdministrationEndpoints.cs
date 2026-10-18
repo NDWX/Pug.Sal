@@ -78,6 +78,21 @@ namespace Pug.Sal.WebApi
 				.NotModified()
 				.NotFound();
 
+			Endpoint( surface.MapGet( "categories", GetCategories ), "SalAdminGetCategories",
+					"List the global locality categories with their audit contexts, current ones unless includeRetired" )
+				.Produces<IEnumerable<Category>>();
+
+			Endpoint( surface.MapGet( "categories/{category}", GetCategory ), "SalAdminGetCategory",
+					"Get a global category with its audit contexts" )
+				.Produces<Category>()
+				.NotFound();
+
+			Endpoint( surface.MapGet( "countries/{country}/categories", GetCountryCategories ), "SalAdminGetCountryCategories",
+					"List the categories assigned to a country with their audit contexts, disabled ones unless includeDisabled is false" )
+				.Produces<Versioned<IEnumerable<CountryCategory>>>()
+				.NotModified()
+				.NotFound();
+
 			Endpoint( surface.MapGet( "countries/{country}/localities/search", SearchLocalities ), "SalAdminSearchLocalities",
 					"Search a country's current localities by name prefix, with their audit contexts" )
 				.Produces<Versioned<IEnumerable<Locality>>>()
@@ -86,7 +101,7 @@ namespace Pug.Sal.WebApi
 				.NotFound();
 
 			Endpoint( surface.MapGet( "countries/{country}/localities", GetLocalities ), "SalAdminGetLocalities",
-					"List a country's localities with their audit contexts, optionally by subdivision, postcode and name" )
+					"List a country's localities with their audit contexts, optionally by subdivision, postcode, name and category" )
 				.Produces<Versioned<IEnumerable<Locality>>>()
 				.NotModified()
 				.NotFound();
@@ -105,7 +120,8 @@ namespace Pug.Sal.WebApi
 
 			// == Countries ==
 
-			Endpoint( surface.MapPost( "countries", CreateCountry ), "SalAdminCreateCountry", "Create a country" )
+			Endpoint( surface.MapPost( "countries", CreateCountry ), "SalAdminCreateCountry",
+					"Create a country with its first categories (Categories, at least one)" )
 				.Produces<Country>( StatusCodes.Status201Created )
 				.Invalid()
 				.Duplicate();
@@ -178,6 +194,55 @@ namespace Pug.Sal.WebApi
 				.Invalid()
 				.NotFound();
 
+			// == Global categories ==
+
+			Endpoint( surface.MapPost( "categories", CreateCategory ), "SalAdminCreateCategory", "Create a global locality category" )
+				.Produces<Category>( StatusCodes.Status201Created )
+				.Invalid()
+				.Duplicate();
+
+			Endpoint( surface.MapPut( "categories/{category}", UpdateCategory ), "SalAdminUpdateCategory",
+					"Replace a global category's name; the route names the category" )
+				.Produces<Category>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( surface.MapPost( "categories/{category}/retire", RetireCategory ), "SalAdminRetireCategory",
+					"Retire a global category: it can no longer be assigned or enabled; countries that have it keep it" )
+				.Produces<Category>()
+				.NotFound();
+
+			Endpoint( surface.MapPost( "categories/{category}/reinstate", ReinstateCategory ), "SalAdminReinstateCategory",
+					"Reinstate a retired global category" )
+				.Produces<Category>()
+				.NotFound();
+
+			// == Country categories ==
+
+			Endpoint( surface.MapPut( "countries/{country}/categories/{category}", AssignCategory ), "SalAdminAssignCategory",
+					"Assign a current global category to a country; assigning one already assigned changes nothing" )
+				.Produces<Versioned<CountryCategory>>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( surface.MapDelete( "countries/{country}/categories/{category}", UnassignCategory ), "SalAdminUnassignCategory",
+					"Unassign a category no locality of the country has; returns the dataset version produced" )
+				.Produces<DatasetVersionResult>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( surface.MapPost( "countries/{country}/categories/{category}/disable", DisableCategory ), "SalAdminDisableCategory",
+					"Disable a country's category, optionally moving its localities to the replacement category" )
+				.Produces<Versioned<CountryCategory>>()
+				.Invalid()
+				.NotFound();
+
+			Endpoint( surface.MapPost( "countries/{country}/categories/{category}/enable", EnableCategory ), "SalAdminEnableCategory",
+					"Enable a country's disabled category" )
+				.Produces<Versioned<CountryCategory>>()
+				.Invalid()
+				.NotFound();
+
 			// == Imports ==
 
 			Endpoint( surface.MapPost( "countries/{country}/imports", Import ), "SalAdminImport",
@@ -204,8 +269,9 @@ namespace Pug.Sal.WebApi
 			"importer (required) names a registered dataset importer, matched case-insensitively (e.g. csv); " +
 			"source (optional) is a free-form label recorded on the import run; " +
 			"option.<name>=<value> (any number) passes importer-specific options, each becoming ImportRequest.Options[<name>]. " +
-			"The csv importer reads option.locality, option.postcode and option.subdivision (header names of those columns) " +
-			"and option.delimiter (one character, or tab); subdivision values must be the registered codes, unchanged. " +
+			"The csv importer reads option.locality, option.postcode, option.subdivision and option.category (header names of those columns), " +
+			"option.defaultCategory (the category of rows without one) and option.delimiter (one character, or tab); " +
+			"subdivision and category values must be the registered codes, unchanged. " +
 			"The dataset must cover the whole country: localities it does not hold are deleted. " +
 			"422 reports an unknown importer (UNKNOWN_IMPORTER) or an unreadable or invalid dataset (INVALID_DATASET, with Position).";
 
@@ -240,11 +306,21 @@ namespace Pug.Sal.WebApi
 													[FromServices] ILocalityAdministration administration ) =>
 			SalResults.HandleAsync( () => administration.GetSubdivisionAsync( country, subdivision ), read => Versioned( context, read ) );
 
+		private static Task<IResult> GetCategories( [FromQuery] bool? includeRetired, [FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.GetCategoriesAsync( includeRetired ?? false ), Results.Ok );
+
+		private static Task<IResult> GetCategory( [FromRoute] string category, [FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.GetCategoryAsync( category ), Results.Ok );
+
+		private static Task<IResult> GetCountryCategories( [FromRoute] string country, [FromQuery] bool? includeDisabled, HttpContext context,
+															[FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.GetCountryCategoriesAsync( country, includeDisabled ?? true ), read => Versioned( context, read ) );
+
 		private static Task<IResult> GetLocalities( [FromRoute] string country, [FromQuery] string? subdivision, [FromQuery] string? postcode,
-													[FromQuery] string? name, [FromQuery] bool? includeRetired, HttpContext context,
-													[FromServices] ILocalityAdministration administration ) =>
+													[FromQuery] string? name, [FromQuery] string? category, [FromQuery] bool? includeRetired,
+													HttpContext context, [FromServices] ILocalityAdministration administration ) =>
 			SalResults.HandleAsync(
-				() => administration.GetLocalitiesAsync( country, subdivision!, postcode!, name!, includeRetired ?? false ),
+				() => administration.GetLocalitiesAsync( country, subdivision!, postcode!, name!, category!, includeRetired ?? false ),
 				read => Versioned( context, read ) );
 
 		private static async Task<IResult> GetLocality( [FromRoute] string country, [FromQuery] string? subdivision,
@@ -261,14 +337,14 @@ namespace Pug.Sal.WebApi
 		}
 
 		private static async Task<IResult> SearchLocalities( [FromRoute] string country, [FromQuery] string? text,
-															[FromQuery] string? subdivision, [FromQuery] int? limit, HttpContext context,
-															[FromServices] ILocalityAdministration administration )
+															[FromQuery] string? subdivision, [FromQuery] string? category, [FromQuery] int? limit,
+															HttpContext context, [FromServices] ILocalityAdministration administration )
 		{
 			if( string.IsNullOrWhiteSpace( text ) )
 				return SalResults.MissingArgument( nameof(text) );
 
 			return await SalResults.HandleAsync(
-							() => administration.SearchLocalitiesAsync( country, text, subdivision!, limit ?? 20 ),
+							() => administration.SearchLocalitiesAsync( country, text, subdivision!, category!, limit ?? 20 ),
 							read => Versioned( context, read ) )
 						.ConfigureAwait( false );
 		}
@@ -423,6 +499,60 @@ namespace Pug.Sal.WebApi
 							version => Results.Ok( new DatasetVersionResult { DatasetVersion = version } ) )
 						.ConfigureAwait( false );
 		}
+
+		// == Global categories ==
+
+		private static async Task<IResult> CreateCategory( [FromBody] CategoryDefinition? definition,
+															[FromServices] ILocalityAdministration administration,
+															HttpContext http, [FromServices] LinkGenerator links )
+		{
+			if( definition is null )
+				return SalResults.MissingArgument( nameof(definition) );
+
+			return await SalResults.HandleAsync(
+							() => administration.CreateCategoryAsync( definition ),
+							category => Results.Created(
+								Location( http, links, "SalAdminGetCategory", new RouteValueDictionary { [ "category" ] = category.Definition.Code } ),
+								category ) )
+						.ConfigureAwait( false );
+		}
+
+		// The route names the category; the body's Code is ignored.
+		private static async Task<IResult> UpdateCategory( [FromRoute] string category, [FromBody] CategoryDefinition? definition,
+															[FromServices] ILocalityAdministration administration )
+		{
+			if( definition is null )
+				return SalResults.MissingArgument( nameof(definition) );
+
+			return await SalResults.HandleAsync( () => administration.UpdateCategoryAsync( definition with { Code = category } ), Results.Ok )
+						.ConfigureAwait( false );
+		}
+
+		private static Task<IResult> RetireCategory( [FromRoute] string category, [FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.RetireCategoryAsync( category ), Results.Ok );
+
+		private static Task<IResult> ReinstateCategory( [FromRoute] string category, [FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.ReinstateCategoryAsync( category ), Results.Ok );
+
+		// == Country categories ==
+
+		private static Task<IResult> AssignCategory( [FromRoute] string country, [FromRoute] string category,
+													[FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.AssignCategoryAsync( country, category ), Results.Ok );
+
+		private static Task<IResult> UnassignCategory( [FromRoute] string country, [FromRoute] string category,
+														[FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync(
+				() => administration.UnassignCategoryAsync( country, category ),
+				version => Results.Ok( new DatasetVersionResult { DatasetVersion = version } ) );
+
+		private static Task<IResult> DisableCategory( [FromRoute] string country, [FromRoute] string category, [FromQuery] string? replacement,
+													[FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.DisableCategoryAsync( country, category, replacement! ), Results.Ok );
+
+		private static Task<IResult> EnableCategory( [FromRoute] string country, [FromRoute] string category,
+													[FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.EnableCategoryAsync( country, category ), Results.Ok );
 
 		// == Imports ==
 

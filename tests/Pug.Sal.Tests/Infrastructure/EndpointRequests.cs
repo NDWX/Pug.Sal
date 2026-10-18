@@ -21,7 +21,8 @@ internal static class EndpointRequests
 	public static HttpRequestMessage For( RouteEndpoint endpoint )
 	{
 		string method = Assert.Single( endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods );
-		string path = endpoint.RoutePattern.RawText!.TrimStart( '/' ).Replace( "{country}", "AU" ).Replace( "{subdivision}", "NSW" ) +
+		string path = endpoint.RoutePattern.RawText!.TrimStart( '/' ).Replace( "{country}", "AU" ).Replace( "{subdivision}", "NSW" )
+					.Replace( "{category}", "TOWN" ) +
 					"?name=Sydney&text=s&importer=csv";
 
 		HttpRequestMessage request = new( new HttpMethod( method ), path );

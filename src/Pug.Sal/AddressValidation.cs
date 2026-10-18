@@ -4,9 +4,11 @@ using Pug.Sal.Models;
 namespace Pug.Sal
 {
 	// What validating one candidate needs from the store, read in one session: the country, all its
-	// subdivisions, and its localities (retired included) matching the candidate's name and postcode.
+	// subdivisions and categories, and its localities (retired included) matching the candidate's
+	// name and postcode.
 	internal sealed record AddressEvidence( Country Country,
 											IReadOnlyList<Subdivision> Subdivisions,
+											IReadOnlyList<CountryCategory> Categories,
 											IReadOnlyList<Locality> ByName,
 											IReadOnlyList<Locality> ByPostcode );
 
@@ -21,10 +23,13 @@ namespace Pug.Sal
 	//   MALFORMED when its normalized form does not fully match the country's PostcodePattern,
 	//   otherwise matched against the postcodes the country's localities hold.
 	// - Locality: MISSING when blank, otherwise matched by normalized name.
+	// - Category (optional, D28): NOT_APPLICABLE when blank; otherwise matched among the country's
+	//   categories by code, then by normalized name, case-insensitively: VALID when enabled, RETIRED
+	//   when disabled, UNKNOWN when the country has no such category.
 	// - Combination: NOT_CHECKED unless every component above is VALID, RETIRED or NOT_APPLICABLE;
-	//   then VALID when a current locality has the name under the matched subdivision and with the
-	//   given postcode (either omitted when not applicable), RETIRED when only retired ones do, and
-	//   MISMATCH otherwise.
+	//   then VALID when a current locality has the name under the matched subdivision, with the
+	//   given postcode and in the matched category (each omitted when not applicable), RETIRED when
+	//   only retired ones do, and MISMATCH otherwise.
 	//
 	// A component matching both current and retired records reports the current one.
 	internal static class AddressValidation
@@ -68,17 +73,33 @@ namespace Pug.Sal
 													? Outcome( ValidationOutcomes.Missing )
 													: Matched( Best( evidence.ByName ), locality => locality.Definition.Name );
 
+			CountryCategory? category = null;
+			ComponentValidation categoryResult;
+
+			if( string.IsNullOrWhiteSpace( candidate.Category ) )
+				categoryResult = Outcome( ValidationOutcomes.NotApplicable );
+			else
+			{
+				category = MatchCategory( candidate.Category, evidence.Categories, normalizer );
+
+				categoryResult = category is null
+									? Outcome( ValidationOutcomes.Unknown )
+									: Matched( category.Disabled, category.Category );
+			}
+
 			string combination;
 			Locality? match = null;
 
-			if( !IsCheckable( subdivisionResult ) || !IsCheckable( postcodeResult ) || !IsCheckable( localityResult ) )
+			if( !IsCheckable( subdivisionResult ) || !IsCheckable( postcodeResult ) || !IsCheckable( localityResult ) ||
+				!IsCheckable( categoryResult ) )
 			{
 				combination = ValidationOutcomes.NotChecked;
 			}
 			else
 			{
 				match = Best( evidence.ByName.Where( locality => IsUnder( locality, subdivision ) &&
-																( postcodeKey is null || HasPostcode( locality, postcodeKey, normalizer ) ) ) );
+																( postcodeKey is null || HasPostcode( locality, postcodeKey, normalizer ) ) &&
+																( category is null || locality.Definition.Category == category.Category ) ) );
 
 				combination = match is null ? ValidationOutcomes.Mismatch :
 							match.Retired is null ? ValidationOutcomes.Valid : ValidationOutcomes.Retired;
@@ -88,6 +109,7 @@ namespace Pug.Sal
 							IsAcceptable( subdivisionResult ) &&
 							IsAcceptable( postcodeResult ) &&
 							localityResult.Outcome == ValidationOutcomes.Valid &&
+							IsAcceptable( categoryResult ) &&
 							combination == ValidationOutcomes.Valid;
 
 			return new ValidationResult
@@ -97,6 +119,7 @@ namespace Pug.Sal
 				Subdivision = subdivisionResult,
 				Locality = localityResult,
 				Postcode = postcodeResult,
+				Category = categoryResult,
 				Combination = combination,
 				Match = isValid ? ToCandidate( match!, country.Code, postcodeKey is not null ) : null!,
 				Suggestions = isValid || evidence.Country.Retired is not null
@@ -177,6 +200,28 @@ namespace Pug.Sal
 			return null;
 		}
 
+		private static CountryCategory? MatchCategory( string given, IReadOnlyList<CountryCategory> categories, INameNormalizer normalizer )
+		{
+			string value = given.Trim();
+			string? nameKey = normalizer.Normalize( value );
+
+			Func<CountryCategory, bool>[] tiers =
+			{
+				c => string.Equals( c.Category, value, StringComparison.OrdinalIgnoreCase ),
+				c => normalizer.Normalize( c.Name ) == nameKey
+			};
+
+			foreach( Func<CountryCategory, bool> tier in tiers )
+			{
+				CountryCategory? found = categories.Where( tier ).OrderBy( c => c.Disabled is null ? 0 : 1 ).FirstOrDefault();
+
+				if( found is not null )
+					return found;
+			}
+
+			return null;
+		}
+
 		private static bool IsUnder( Locality locality, Subdivision? subdivision ) =>
 			subdivision is null || locality.Definition.Subdivision == subdivision.Definition.Code;
 
@@ -223,7 +268,8 @@ namespace Pug.Sal
 				Country = countryCode,
 				Subdivision = locality.Definition.Subdivision,
 				Locality = locality.Definition.Name,
-				Postcode = withPostcode ? locality.Definition.Postcode : null!
+				Postcode = withPostcode ? locality.Definition.Postcode : null!,
+				Category = locality.Definition.Category
 			};
 
 		private static string? NullIfEmpty( string? value ) => string.IsNullOrEmpty( value ) ? null : value;

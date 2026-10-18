@@ -32,7 +32,9 @@ public class LocalityDirectoryTests : IClassFixture<AustraliaFixture>
 		{ "GetLocalities", d => d.GetLocalitiesAsync( "AU" ) },
 		{ "GetLocality", d => d.GetLocalityAsync( "AU", "AU-NSW", "2000", "Sydney" ) },
 		{ "SearchLocalities", d => d.SearchLocalitiesAsync( "AU", "Syd" ) },
-		{ "Validate", d => d.ValidateAsync( new AddressCandidate { Country = "AU" } ) }
+		{ "Validate", d => d.ValidateAsync( new AddressCandidate { Country = "AU" } ) },
+		{ "GetCategories", d => d.GetCategoriesAsync() },
+		{ "GetCountryCategories", d => d.GetCountryCategoriesAsync( "AU" ) }
 	};
 
 	[Theory]
@@ -246,5 +248,60 @@ public class LocalityDirectoryTests : IClassFixture<AustraliaFixture>
 	{
 		await Assert.ThrowsAsync<ArgumentException>( () => _directory.SearchLocalitiesAsync( "AU", "  " ) );
 		await Assert.ThrowsAsync<ArgumentOutOfRangeException>( () => _directory.SearchLocalitiesAsync( "AU", "s", limit: 0 ) );
+	}
+
+	// == Categories (DECISIONS D28) ==
+
+	[Fact]
+	public async Task CategoriesAreGlobalAndOmitRetiredUnlessAsked()
+	{
+		IEnumerable<CategoryInfo> current = await _directory.GetCategoriesAsync();
+		IEnumerable<CategoryInfo> all = await _directory.GetCategoriesAsync( includeRetired: true );
+
+		Assert.Equal( new[] { "RURAL", "SUBURB", "TOWN" }, current.Select( c => c.Definition.Code ) );
+		Assert.Equal( new[] { "HAMLET", "RURAL", "SUBURB", "TOWN" }, all.Select( c => c.Definition.Code ) );
+		Assert.NotNull( all.First().Retired );
+	}
+
+	[Fact]
+	public async Task TheGlobalListIsCheckedAgainstTheCategoryResource()
+	{
+		LocalityDirectory countriesOnly = _fixture.CreateDirectory( SecurityManagers.GrantingOn( SecurityObjectTypes.Country ) );
+		LocalityDirectory categoriesOnly = _fixture.CreateDirectory( SecurityManagers.GrantingOn( SecurityObjectTypes.Category ) );
+
+		await Assert.ThrowsAsync<AccessDeniedException>( () => countriesOnly.GetCategoriesAsync() );
+		Assert.NotEmpty( await categoriesOnly.GetCategoriesAsync() );
+		Assert.NotEmpty( ( await countriesOnly.GetCountryCategoriesAsync( "AU" ) ).Value );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => categoriesOnly.GetCountryCategoriesAsync( "AU" ) );
+	}
+
+	[Fact]
+	public async Task CountryCategoriesCarryTheGlobalNameAndTheCountryVersion()
+	{
+		Versioned<IEnumerable<CountryCategoryInfo>> au = await _directory.GetCountryCategoriesAsync( "au" );
+		Versioned<IEnumerable<CountryCategoryInfo>> enabled = await _directory.GetCountryCategoriesAsync( "AU", includeDisabled: false );
+
+		Assert.Equal( new[] { "RURAL|Rural locality|disabled", "SUBURB|Suburb|", "TOWN|Town|" },
+					au.Value.Select( c => $"{c.Category}|{c.Name}|{( c.Disabled is null ? "" : "disabled" )}" ) );
+		Assert.Equal( new[] { "SUBURB", "TOWN" }, enabled.Value.Select( c => c.Category ) );
+		Assert.Equal( AustraliaFixture.AuVersion, au.DatasetVersion );
+		Assert.Equal( new[] { "TOWN" }, ( await _directory.GetCountryCategoriesAsync( "NR" ) ).Value.Select( c => c.Category ) );
+		await Assert.ThrowsAsync<UnknownCountryException>( () => _directory.GetCountryCategoriesAsync( "ZZ" ) );
+	}
+
+	[Fact]
+	public async Task LocalitiesAndSearchNarrowByCategory()
+	{
+		Versioned<IEnumerable<LocalityInfo>> suburbs = await _directory.GetLocalitiesAsync( "AU", category: " SUBURB " );
+		Versioned<IEnumerable<LocalityInfo>> allSuburbs = await _directory.GetLocalitiesAsync( "AU", category: "SUBURB", includeRetired: true );
+		Versioned<IEnumerable<LocalityInfo>> rural = await _directory.GetLocalitiesAsync( "AU", name: "spring creek", category: "RURAL" );
+		Versioned<IEnumerable<LocalityInfo>> sTowns = await _directory.SearchLocalitiesAsync( "AU", "s", category: "TOWN" );
+
+		Assert.Equal( new[] { "AU-ACT|2620|Hume", "AU-NSW|2000|Sydney", "AU-VIC|3000|Melbourne", "AU-VIC|3182|St Kilda" }, Keys( suburbs.Value ) );
+		Assert.Equal( 5, allSuburbs.Value.Count() );
+		Assert.Equal( new[] { "AU-QLD|4361|Spring Creek" }, Keys( rural.Value ) );
+		Assert.Equal( new[] { "AU-QLD|4343|Spring Creek" }, Keys( sTowns.Value ) );
+		Assert.All( suburbs.Value, l => Assert.Equal( "SUBURB", l.Definition.Category ) );
+		Assert.Empty( ( await _directory.GetLocalitiesAsync( "AU", category: "suburb" ) ).Value );
 	}
 }

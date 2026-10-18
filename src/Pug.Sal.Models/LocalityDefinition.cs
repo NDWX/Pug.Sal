@@ -6,7 +6,7 @@ namespace Pug.Sal.Models
 	// Maintainer-authored description of one locality/postcode pair. (Country, Subdivision,
 	// normalized Postcode, normalized Name) is the key: a suburb served by several postcodes is one
 	// record per postcode, and same-named places within a subdivision are told apart by postcode. A
-	// locality is never updated: a correction is a delete and a create.
+	// locality is never updated, except for its Category: a correction is a delete and a create.
 	[DataContract]
 	public record LocalityDefinition
 	{
@@ -51,6 +51,20 @@ namespace Pug.Sal.Models
 		// Display name, stored as given; matching uses its normalized form.
 		[Required, DataMember( IsRequired = true )]
 		public string Name
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
+		// Code of a category assigned to the country, which must be enabled when the locality is
+		// created. Not part of the key: it changes only when its category is disabled with a
+		// replacement, or by an import (DECISIONS D28).
+		[Required, DataMember( IsRequired = true )]
+		public string Category
 		{
 			get;
 #if NET5_0_OR_GREATER

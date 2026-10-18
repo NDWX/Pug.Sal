@@ -16,6 +16,10 @@ internal static class SecurityManagers
 	internal static ISecurityManager Granting( params string[] operations ) =>
 		Create( "test-user", ( operation, _ ) => operations.Contains( operation ) );
 
+	// Grants every operation, but only on resources of the given SecurityObjectTypes type.
+	internal static ISecurityManager GrantingOn( string resourceType ) =>
+		Create( "test-user", ( _, resource ) => resource.Type == resourceType );
+
 	// No current principal: Sal refuses such calls (DECISIONS D8).
 	internal static ISecurityManager WithoutPrincipal()
 	{

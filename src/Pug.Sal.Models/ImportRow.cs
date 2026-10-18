@@ -43,5 +43,19 @@ namespace Pug.Sal.Models
 			set;
 #endif
 		}
+
+		// Code of a category assigned to the country and enabled; a missing, unknown or disabled
+		// one fails the whole import. A row repeating an earlier row's key must give the same
+		// category.
+		[Required, DataMember( IsRequired = true )]
+		public string Category
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
 	}
 }

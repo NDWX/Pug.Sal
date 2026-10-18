@@ -146,7 +146,8 @@ publisher is used.
   `ResourceQualifiers.AllCountries` = `{ Type = COUNTRY }`, unqualified like Scheduling's
   `AnySchedule`. `Domain` is empty, because Sal's reference data is global, not tenant-scoped.
   Operations that list countries are refused like any other when `VIEW` is not granted. Nothing is
-  filtered by grant.
+  filtered by grant. The global category list is the one exception: it is checked against
+  `ResourceQualifiers.AllCategories` (D28).
 - **Country-specific permissions are deferred (user directive, 2026-10-07).** The user wants a
   per-country deny to be able to override an all-countries grant. The
   `Pug.Application.Security` `IsAuthorizedAsync` contract is boolean. Pug.Authorized does
@@ -793,6 +794,97 @@ reads, and the two interfaces get their own implementations.
 - **Validation is unchanged.** It still matches a subdivision by code, by the code's part after
   `<country>-` (for maintainers who registered prefixed codes), or by name.
 
+## D28 — Locality categories (user directive, 2026-10-18)
+
+The user's directive: every locality has a category. The list of categories is global, a category
+must be assigned to a country before its localities can use it, and a country always has at least
+one enabled category. A category in use can't be unassigned, but it can be disabled, optionally
+moving its localities to another category. Locality reads and searches take an optional category
+criterion. The user's answers to the follow-up questions are marked *(user)*; the rest are the
+assistant's choices.
+
+- **Global categories** (`CategoryDefinition { Code, Name }`, `Category` / `CategoryInfo`):
+  - **Lifecycle:** they are created, renamed and retired, never deleted *(user)*.
+  - **Effect of retiring one:** it can't be newly assigned, or re-enabled in a country where it is
+    disabled. Countries that already have it keep it.
+  - **Codes:** maintainer-defined, trimmed and matched exactly, like subdivision codes.
+  - **Authorization:** managing the list is checked against a new resource,
+    `ResourceQualifiers.AllCategories = { Type = CATEGORY }`, with `CREATE`, `MODIFY`, `RETIRE`,
+    and `VIEW` for reading the list *(user)*. This is the one exception to D8's "every check is
+    against AllCountries".
+  - **Versioning:** the list has no dataset version, so its reads carry no ETag. A global change
+    bumps no country's version.
+- **Country categories** (`CountryCategory` / `CountryCategoryInfo { Country, Category, Name,
+  Disabled }`): the assignments, keyed by `(country, category)`. `Name` is read from the global
+  category, not stored.
+  - **First category:** `CountryDefinition.Categories` gives the first codes, at least one *(user)*.
+    Only `CreateCountryAsync` reads it, and records read back leave it null.
+  - **Operations:** these are country writes, so each bumps the country's version and is checked
+    against `AllCountries`.
+
+    | Operation | Checked as | Effect |
+    |---|---|---|
+    | `AssignCategoryAsync` | `MODIFY` | Assigns a current global category. Assigning one already assigned changes nothing. |
+    | `UnassignCategoryAsync` | `MODIFY` | Refused (`ArgumentException`) once any locality of the country, retired ones included, has the category, or when it would leave no enabled category. |
+    | `DisableCategoryAsync( country, category, replacement )` | `RETIRE` | Refused when it would leave no enabled category. With a replacement, which must be another enabled category of the country, every locality of the country with the category moves to the replacement, in the same transaction. A disabled category can be given again with a replacement, to move the localities still holding it. |
+    | `EnableCategoryAsync` | `RETIRE` | Refused when the global category is retired. |
+
+    Disabling a disabled category without a replacement, or enabling an enabled one, changes
+    nothing.
+  - **Stored timestamp:** `Disabled` is the action timestamp, and is stored as version text like
+    `retired` (D19).
+- **A locality's category is not part of its identity** *(user)*. The key stays `(country,
+  subdivision, postcode, name)`.
+  - **The exception to "never updated" (D13):** a locality's category is the one thing that
+    changes on a locality. It changes only through a disable with a replacement, or through an
+    import whose row has a different category.
+  - **What a change stamps:** `LastUpdate`, and the stamped time, take the action's context. A
+    retired locality stays retired.
+  - **Creating:** `LocalityDefinition.Category` is required. It must be assigned to the country, or
+    the write fails with `UnknownCategoryException` (404, `UNKNOWN_CATEGORY`). It must also be
+    enabled, or the write fails with `ArgumentException`.
+  - **Disabled categories:** a disabled category is refused everywhere *(user)*: for new
+    localities and for import rows.
+- **Imports:**
+  - **Where the category comes from:** each `ImportRow` carries one. The CSV importer reads it from
+    a `category` column, whose header is set by the `category` option. The `defaultCategory`
+    option fills blank cells, or every row when the column is absent *(user)*.
+  - **What fails the import:** like an unknown subdivision, these fail the whole import:
+    - a row with no category;
+    - a category that is unknown, unassigned or disabled;
+    - a key repeated with a different category.
+  - **Recategorized localities:** a locality the dataset holds under another category is
+    recategorized and counted in `ImportRun.Recategorized`. A retired one is counted under
+    `Reinstated` only.
+- **Reads:** `GetLocalitiesAsync` and `SearchLocalitiesAsync` (both facades) take an optional
+  `category` code, matched exactly. The directory also lists the global categories and a country's
+  categories.
+- **Validation** *(user: optional criterion)*:
+  - **The criterion:** `AddressCandidate.Category` is optional. When it is blank,
+    `ValidationResult.Category` is `NOT_APPLICABLE`.
+  - **Matching:** a given category is matched among the country's categories by code, then by
+    normalized name, case-insensitively. A match on an enabled category is `VALID`, on a disabled
+    one `RETIRED`, and anything else is `UNKNOWN`.
+  - **Combination:** when a category is given, the combination also requires the matched locality
+    to have it.
+  - **Answers:** `Match` and `Suggestions` carry each locality's category.
+- **Change events:**
+  - **Global category changes:** they publish a `LocalityChange` with `EntityType = CATEGORY`,
+    `Country` null and `DatasetVersion` equal to the action timestamp.
+  - **Assignments:** they publish `EntityType = COUNTRY_CATEGORY` with `Key` = the category code.
+    The kind is `CREATED` for an assignment (each first category of a new country included),
+    `DELETED` for an unassignment, `RETIRED` for a disable and `REINSTATED` for an enable. A disable
+    with a replacement sets `Replacement`.
+  - **Locality changes:** they carry the locality's `Category`.
+  - **Moved localities:** like an import's rows, the localities moved by a replacement publish no
+    change of their own.
+- **Schema:** version 1 is rewritten *(user)*:
+  - **New tables:** `category`, and `countryCategory` (primary key `(country, category)`).
+  - **New columns:** `locality.category` is not null, indexed by `ixLocalityCategory (country,
+    category)`. `importRun.recategorized` is added.
+  - **No foreign key** from `locality` to `countryCategory`, as with subdivisions (D27). The
+    facades enforce the reference.
+
 ## Verification conventions
 
 - **Completion gate:** `dotnet build Pug.Sal.slnx -warnaserror -m:1` clean **and**
@@ -843,3 +935,7 @@ instruction; the user chose to keep that work.)
     released nuget.org packages** (Security 3.1.1, accessor 3.2.0): the 12 JwtBearer tests pass, and
     the `sal-host` sample compiles with `-warnaserror`. Sal now references Abstractions 3.1.1 (D25).
   - The marketplace entry is added once S3 is done.
+- **D28 locality categories.** DONE (global categories, country assignments with disable and
+  replacement, a required locality category, the category criterion in reads and validation, the
+  CSV importer's `category` and `defaultCategory` options; schema version 1 rewritten; 259 SQLite +
+  93 Postgres tests). Awaiting the user's verification.

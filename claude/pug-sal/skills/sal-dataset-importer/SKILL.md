@@ -13,12 +13,12 @@ public interface IDatasetImporter
 	IAsyncEnumerable<ImportRow> ReadAsync( string country, Stream source, IDictionary<string, string> options );
 }
 
-public record ImportRow { string Subdivision; string Locality /* required */; string Postcode; }
+public record ImportRow { string Subdivision; string Locality /* required */; string Postcode; string Category /* required */; }
 ```
 
 ## First check whether CSV is enough
 
-`Pug.Sal.Importers.Csv`'s `CsvDatasetImporter` (registered as `"csv"`) reads RFC 4180 CSV with a header. It finds columns by header name, which you set in options: `locality`, `postcode`, `subdivision` and `delimiter` (one character, or `tab`). Subdivision values are taken as they are, so they must be the registered codes, which exclude the country (`NSW`, not `AU-NSW`). Converting a vendor file to CSV upstream is often simpler than a new importer. Write one when the format isn't tabular text, when rows need joining or decoding, or when the dataset is published in a format you'd otherwise convert by hand on every edition.
+`Pug.Sal.Importers.Csv`'s `CsvDatasetImporter` (registered as `"csv"`) reads RFC 4180 CSV with a header. It finds columns by header name, which you set in options: `locality`, `postcode`, `subdivision`, `category` and `delimiter` (one character, or `tab`). `defaultCategory` gives the category of rows whose category cell is blank, or of every row when there is no category column. Subdivision and category values are taken as they are, so they must be the registered codes; subdivision codes exclude the country (`NSW`, not `AU-NSW`). Converting a vendor file to CSV upstream is often simpler than a new importer. Write one when the format isn't tabular text, when rows need joining or decoding, or when the dataset is published in a format you'd otherwise convert by hand on every edition.
 
 ## An importer only parses
 
@@ -28,6 +28,7 @@ The importer's job is narrow (DECISIONS D9, D13). `LocalityAdministration.Import
 |---|---|
 | Reads the format and yields one `ImportRow` per locality/postcode pair, in source order | Normalizes names and postcodes, and de-duplicates rows by key (the first row's display values win) |
 | Maps the source's subdivision values to the **exact codes** Sal stores (ordinal match, so case matters) | Checks that every subdivision exists. An unknown one fails the whole import, because imports never create subdivisions |
+| Gives each row a **category code** (from the source, or a default option the caller passes) | Checks the category is assigned to the country and enabled, and that a repeated key repeats its category; changes the category of a locality the dataset holds under another one |
 | Throws `DatasetImportException( message, position )` when the source can't be read | Checks each postcode against the country's `PostcodeRequired` / `PostcodePattern`, and refuses an empty dataset |
 | Leaves values as given (trim if your format pads them) | Applies the import in one transaction: adds, reinstates, deletes whatever is absent, and bumps the country version once |
 
@@ -38,7 +39,7 @@ So an importer never filters, corrects or skips rows to make an import pass. A d
 ## Contract details
 
 - **`country`** is the target country's code, already upper-cased and known to exist. Use it only when the format needs it, for example to pick one country out of a multi-country file.
-- **`ImportRow.Subdivision`** is a code, required when the country `HasSubdivisions` and null otherwise. **`Postcode`** is null when the locality has none. **`Locality`** is the display name.
+- **`ImportRow.Subdivision`** is a code, required when the country `HasSubdivisions` and null otherwise. **`Postcode`** is null when the locality has none. **`Locality`** is the display name. **`Category`** is a category code, required on every row (DECISIONS D28). If the format carries no category, take a default from an option, as CSV's `defaultCategory` does; don't hard-code one.
 - **`options`** are `ImportRequest.Options`, never null. Over HTTP, they come from the query string as `option.<name>=<value>`. Match keys case-insensitively, as CSV does. Validate them up front, and throw `DatasetImportException` (no position) for a missing or bad one.
 - **Positions** are 1-based and mean something to whoever fixes the file: a line number, a record number, or an entry index. Use `null` when the problem concerns the dataset as a whole.
 - **The stream** belongs to the caller. Don't dispose it: open readers with `leaveOpen: true`. It may not be seekable (HTTP bodies aren't), so read it forward once. If the format needs random access (zip), copy it to a temporary file or a `MemoryStream` first.
@@ -59,7 +60,7 @@ public sealed class GnafImporter : IDatasetImporter
 	public async IAsyncEnumerable<ImportRow> ReadAsync( string country, Stream source, IDictionary<string, string> options )
 	{
 		// parse; for each record:
-		yield return new ImportRow { Subdivision = code, Locality = name, Postcode = postcode };
+		yield return new ImportRow { Subdivision = code, Locality = name, Postcode = postcode, Category = category };
 	}
 }
 
@@ -72,4 +73,4 @@ Registering two importers under the same name throws. Callers pick an importer b
 ## Testing
 
 - **Unit-test `ReadAsync` directly on small in-memory sources:** every option, an empty source, a malformed record (assert the `Position`), a missing required option, and encoding. `tests/Pug.Sal.Tests/CsvDatasetImporterTests.cs` in the Pug.Sal repository is the model.
-- **Run one end-to-end import into a SQLite store** through `LocalityAdministration.ImportAsync`. Check the `ImportRun` counts (`Added`, `Reinstated`, `Deleted`, `Unchanged`), and then that a second import of the same dataset reports everything `Unchanged` with `Deleted` 0.
+- **Run one end-to-end import into a SQLite store** through `LocalityAdministration.ImportAsync`. Check the `ImportRun` counts (`Added`, `Reinstated`, `Recategorized`, `Deleted`, `Unchanged`), and then that a second import of the same dataset reports everything `Unchanged` with `Deleted` 0.

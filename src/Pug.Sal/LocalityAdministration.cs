@@ -54,17 +54,31 @@ namespace Pug.Sal
 		public Task<Versioned<Subdivision>> GetSubdivisionAsync( string country, string subdivision ) =>
 			ReadSubdivisionAsync( country, subdivision );
 
+		public Task<IEnumerable<Category>> GetCategoriesAsync( bool includeRetired = false ) => ReadCategoriesAsync( includeRetired );
+
+		public async Task<Category> GetCategoryAsync( string category )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.View, ResourceQualifiers.AllCategories ).ConfigureAwait( false );
+
+			string code = RequiredCategory( category, nameof(category) );
+
+			return await ReadCategoryAsync( code ).ConfigureAwait( false ) ?? throw new UnknownCategoryException( null!, code );
+		}
+
+		public Task<Versioned<IEnumerable<CountryCategory>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true ) =>
+			ReadCountryCategoriesAsync( country, includeDisabled );
+
 		public Task<Versioned<IEnumerable<Locality>>> GetLocalitiesAsync( string country, string subdivision = null!,
 																		string postcode = null!, string name = null!,
-																		bool includeRetired = false ) =>
-			ReadLocalitiesAsync( country, subdivision, postcode, name, includeRetired );
+																		string category = null!, bool includeRetired = false ) =>
+			ReadLocalitiesAsync( country, subdivision, postcode, name, category, includeRetired );
 
 		public Task<Versioned<Locality>> GetLocalityAsync( string country, string subdivision, string postcode, string name ) =>
 			ReadLocalityAsync( country, subdivision, postcode, name );
 
 		public Task<Versioned<IEnumerable<Locality>>> SearchLocalitiesAsync( string country, string text, string subdivision = null!,
-																			int limit = 20 ) =>
-			SearchAsync( country, text, subdivision, limit );
+																			string category = null!, int limit = 20 ) =>
+			SearchAsync( country, text, subdivision, category, limit );
 
 		// == Countries ==
 
@@ -73,6 +87,7 @@ namespace Pug.Sal
 			await CheckAuthorizationAsync( SecurityOperations.Create ).ConfigureAwait( false );
 
 			CountryDefinition stored = DefinitionRules.Country( definition );
+			IReadOnlyList<string> categories = DefinitionRules.Categories( definition.Categories );
 
 			// A new country has no lock to take: its first version is simply the next after none.
 			ActionContext<Reference> action = Action( DatasetVersions.Next( DateTime.MinValue, DateTime.UtcNow ) );
@@ -85,9 +100,24 @@ namespace Pug.Sal
 												{
 													await session.InsertCountryAsync( context.country ).ConfigureAwait( false );
 
+													// Its first categories, assigned enabled (D28).
+													foreach( string code in context.categories )
+													{
+														Category category = await CurrentCategoryAsync( session, code ).ConfigureAwait( false );
+
+														await session.InsertCountryCategoryAsync( new CountryCategory
+																	{
+																		Country = context.country.Definition.Code,
+																		Category = code,
+																		Name = category.Definition.Name,
+																		Registration = context.action
+																	} )
+																	.ConfigureAwait( false );
+													}
+
 													return true;
 												},
-												context: new { country }
+												context: new { country, categories, action }
 											)
 											.ConfigureAwait( false );
 			}
@@ -97,6 +127,9 @@ namespace Pug.Sal
 			}
 
 			await PublishAsync( CountryChange( stored.Code, ChangeKinds.Created, action ) ).ConfigureAwait( false );
+
+			foreach( string category in categories )
+				await PublishAsync( CountryCategoryChange( stored.Code, category, ChangeKinds.Created, action, null ) ).ConfigureAwait( false );
 
 			return country;
 		}
@@ -309,6 +342,14 @@ namespace Pug.Sal
 												if( problem is not null )
 													throw new ArgumentException( problem, nameof(definition) );
 
+												CountryCategory category =
+													await session.GetCountryCategoryAsync( stored.Country, stored.Category ).ConfigureAwait( false ) ??
+													throw new UnknownCategoryException( stored.Country, stored.Category );
+
+												if( category.Disabled is not null )
+													throw new ArgumentException(
+														$"Category '{stored.Category}' is disabled in country '{stored.Country}'.", nameof(definition) );
+
 												Locality locality = new() { Definition = stored, Registration = action };
 
 												try
@@ -454,6 +495,317 @@ namespace Pug.Sal
 			return runs.Value;
 		}
 
+		// == Global categories (D28) ==
+
+		public async Task<Category> CreateCategoryAsync( CategoryDefinition definition )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Create, ResourceQualifiers.AllCategories ).ConfigureAwait( false );
+
+			CategoryDefinition stored = DefinitionRules.Category( definition );
+			ActionContext<Reference> action = Action( DateTime.UtcNow );
+			Category category = new() { Definition = stored, Registration = action };
+
+			try
+			{
+				await ApplicationDataProvider.WriteAsync(
+												async ( session, context ) =>
+												{
+													await session.InsertCategoryAsync( context.category ).ConfigureAwait( false );
+
+													return true;
+												},
+												context: new { category }
+											)
+											.ConfigureAwait( false );
+			}
+			catch( DuplicateKeyException )
+			{
+				throw new DuplicateEntryException( ChangeEntityTypes.Category, stored.Code );
+			}
+
+			await PublishAsync( CategoryChange( stored.Code, ChangeKinds.Created, action ) ).ConfigureAwait( false );
+
+			return category;
+		}
+
+		public async Task<Category> UpdateCategoryAsync( CategoryDefinition definition )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Modify, ResourceQualifiers.AllCategories ).ConfigureAwait( false );
+
+			CategoryDefinition stored = DefinitionRules.Category( definition );
+
+			Written<Category> written = await WriteCategoryAsync(
+											async ( session, action ) =>
+											{
+												if( !await session.UpdateCategoryAsync( stored, action ).ConfigureAwait( false ) )
+													throw new UnknownCategoryException( null!, stored.Code );
+
+												return ( await session.GetCategoryAsync( stored.Code ).ConfigureAwait( false ) )!;
+											}
+										)
+										.ConfigureAwait( false );
+
+			await PublishAsync( CategoryChange( stored.Code, ChangeKinds.Updated, written.Performed ) ).ConfigureAwait( false );
+
+			return written.Value;
+		}
+
+		public Task<Category> RetireCategoryAsync( string category ) => SetCategoryRetiredAsync( category, true );
+
+		public Task<Category> ReinstateCategoryAsync( string category ) => SetCategoryRetiredAsync( category, false );
+
+		private async Task<Category> SetCategoryRetiredAsync( string category, bool retire )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Retire, ResourceQualifiers.AllCategories ).ConfigureAwait( false );
+
+			string code = RequiredCategory( category, nameof(category) );
+			Category current = await ReadCategoryAsync( code ).ConfigureAwait( false ) ?? throw new UnknownCategoryException( null!, code );
+
+			if( ( current.Retired is not null ) == retire )
+				return current;
+
+			Written<Category> written = await WriteCategoryAsync(
+											async ( session, action ) =>
+											{
+												if( !await session.SetCategoryRetiredAsync( code, retire ? action.Timestamp : null, action )
+																.ConfigureAwait( false ) )
+													throw new UnknownCategoryException( null!, code );
+
+												return ( await session.GetCategoryAsync( code ).ConfigureAwait( false ) )!;
+											}
+										)
+										.ConfigureAwait( false );
+
+			await PublishAsync( CategoryChange( code, retire ? ChangeKinds.Retired : ChangeKinds.Reinstated, written.Performed ) )
+				.ConfigureAwait( false );
+
+			return written.Value;
+		}
+
+		// == Country categories (D28) ==
+
+		public async Task<Versioned<CountryCategory>> AssignCategoryAsync( string country, string category )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Modify ).ConfigureAwait( false );
+
+			string code = CountryCode( country );
+			string categoryCode = RequiredCategory( category, nameof(category) );
+
+			Versioned<CountryCategory?> current = await ReadVersionedAsync( code, ( session, _ ) => session.GetCountryCategoryAsync( code, categoryCode ) )
+													.ConfigureAwait( false );
+
+			if( current.Value is not null )
+				return new Versioned<CountryCategory> { Value = current.Value, DatasetVersion = current.DatasetVersion };
+
+			Written<CountryCategory> written = await WriteAsync(
+													code,
+													async ( session, action ) =>
+													{
+														Category global = await CurrentCategoryAsync( session, categoryCode ).ConfigureAwait( false );
+
+														try
+														{
+															await session.InsertCountryCategoryAsync( new CountryCategory
+																		{
+																			Country = code,
+																			Category = categoryCode,
+																			Name = global.Definition.Name,
+																			Registration = action
+																		} )
+																		.ConfigureAwait( false );
+														}
+														catch( DuplicateKeyException )
+														{
+															throw new DuplicateEntryException( ChangeEntityTypes.CountryCategory, categoryCode );
+														}
+
+														return ( await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) )!;
+													}
+												)
+												.ConfigureAwait( false );
+
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Created, written.Performed, null ) ).ConfigureAwait( false );
+
+			return written.Versioned();
+		}
+
+		public async Task<DateTime> UnassignCategoryAsync( string country, string category )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Modify ).ConfigureAwait( false );
+
+			string code = CountryCode( country );
+			string categoryCode = RequiredCategory( category, nameof(category) );
+
+			Written<CountryCategory> written = await WriteAsync(
+													code,
+													async ( session, _ ) =>
+													{
+														CountryCategory assigned =
+															await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) ??
+															throw new UnknownCategoryException( code, categoryCode );
+
+														if( await session.HasLocalitiesAsync( code, categoryCode ).ConfigureAwait( false ) )
+															throw new ArgumentException(
+																$"Category '{categoryCode}' of country '{code}' is held by localities; disable it instead.",
+																nameof(category) );
+
+														if( assigned.Disabled is null )
+															await RequireAnotherEnabledAsync( session, code, categoryCode ).ConfigureAwait( false );
+
+														await session.DeleteCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false );
+
+														return assigned;
+													}
+												)
+												.ConfigureAwait( false );
+
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Deleted, written.Performed, null ) ).ConfigureAwait( false );
+
+			return written.Performed.Timestamp;
+		}
+
+		public async Task<Versioned<CountryCategory>> DisableCategoryAsync( string country, string category, string replacement = null! )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Retire ).ConfigureAwait( false );
+
+			string code = CountryCode( country );
+			string categoryCode = RequiredCategory( category, nameof(category) );
+			string? replacementCode = OptionalCode( replacement );
+
+			Versioned<CountryCategory?> current = await ReadVersionedAsync( code, ( session, _ ) => session.GetCountryCategoryAsync( code, categoryCode ) )
+													.ConfigureAwait( false );
+
+			if( current.Value is null )
+				throw new UnknownCategoryException( code, categoryCode );
+
+			if( current.Value.Disabled is not null && replacementCode is null )
+				return new Versioned<CountryCategory> { Value = current.Value, DatasetVersion = current.DatasetVersion };
+
+			Written<CountryCategory> written = await WriteAsync(
+													code,
+													async ( session, action ) =>
+													{
+														CountryCategory assigned =
+															await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) ??
+															throw new UnknownCategoryException( code, categoryCode );
+
+														if( replacementCode is not null )
+														{
+															if( replacementCode == categoryCode )
+																throw new ArgumentException( "A category cannot replace itself.", nameof(replacement) );
+
+															CountryCategory target =
+																await session.GetCountryCategoryAsync( code, replacementCode ).ConfigureAwait( false ) ??
+																throw new UnknownCategoryException( code, replacementCode );
+
+															if( target.Disabled is not null )
+																throw new ArgumentException(
+																	$"Replacement category '{replacementCode}' is disabled in country '{code}'.", nameof(replacement) );
+														}
+														else
+														{
+															await RequireAnotherEnabledAsync( session, code, categoryCode ).ConfigureAwait( false );
+														}
+
+														if( assigned.Disabled is null )
+															await session.SetCountryCategoryDisabledAsync( code, categoryCode, action.Timestamp, action )
+																		.ConfigureAwait( false );
+
+														if( replacementCode is not null )
+															await session.ReplaceLocalityCategoryAsync( code, categoryCode, replacementCode, action )
+																		.ConfigureAwait( false );
+
+														return ( await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) )!;
+													}
+												)
+												.ConfigureAwait( false );
+
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Retired, written.Performed, replacementCode ) )
+				.ConfigureAwait( false );
+
+			return written.Versioned();
+		}
+
+		public async Task<Versioned<CountryCategory>> EnableCategoryAsync( string country, string category )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.Retire ).ConfigureAwait( false );
+
+			string code = CountryCode( country );
+			string categoryCode = RequiredCategory( category, nameof(category) );
+
+			Versioned<CountryCategory?> current = await ReadVersionedAsync( code, ( session, _ ) => session.GetCountryCategoryAsync( code, categoryCode ) )
+													.ConfigureAwait( false );
+
+			if( current.Value is null )
+				throw new UnknownCategoryException( code, categoryCode );
+
+			if( current.Value.Disabled is null )
+				return new Versioned<CountryCategory> { Value = current.Value, DatasetVersion = current.DatasetVersion };
+
+			Written<CountryCategory> written = await WriteAsync(
+													code,
+													async ( session, action ) =>
+													{
+														await CurrentCategoryAsync( session, categoryCode ).ConfigureAwait( false );
+
+														if( !await session.SetCountryCategoryDisabledAsync( code, categoryCode, null, action ).ConfigureAwait( false ) )
+															throw new UnknownCategoryException( code, categoryCode );
+
+														return ( await session.GetCountryCategoryAsync( code, categoryCode ).ConfigureAwait( false ) )!;
+													}
+												)
+												.ConfigureAwait( false );
+
+			await PublishAsync( CountryCategoryChange( code, categoryCode, ChangeKinds.Reinstated, written.Performed, null ) )
+				.ConfigureAwait( false );
+
+			return written.Versioned();
+		}
+
+		// The global category, which must exist and be current to be assigned or enabled.
+		private static async Task<Category> CurrentCategoryAsync( IDataSession session, string code )
+		{
+			Category category = await session.GetCategoryAsync( code ).ConfigureAwait( false ) ??
+								throw new UnknownCategoryException( null!, code );
+
+			if( category.Retired is not null )
+				throw new ArgumentException( $"Category '{code}' is retired.", nameof(category) );
+
+			return category;
+		}
+
+		// A country keeps at least one enabled category (D28).
+		private static async Task RequireAnotherEnabledAsync( IDataSession session, string country, string category )
+		{
+			IEnumerable<CountryCategory> enabled = await session.GetCountryCategoriesAsync( country, false ).ConfigureAwait( false );
+
+			if( !enabled.Any( other => other.Category != category ) )
+				throw new ArgumentException( $"Country '{country}' must keep at least one enabled category.", nameof(category) );
+		}
+
+		private static string RequiredCategory( string? category, string parameter ) =>
+			OptionalCode( category ) ?? throw new ArgumentException( "A category code is required.", parameter );
+
+		private Task<Category?> ReadCategoryAsync( string code ) =>
+			ApplicationDataProvider.ReadAsync(
+				async ( session, context ) => await session.GetCategoryAsync( context.code ).ConfigureAwait( false ),
+				context: new { code }
+			);
+
+		// A write to the global category list, in one transaction; it belongs to no country, so it
+		// takes no country lock and bumps no version (D28). Its action timestamp is the time now.
+		private async Task<Written<T>> WriteCategoryAsync<T>( Func<IDataSession, ActionContext<Reference>, Task<T>> write )
+		{
+			ActionContext<Reference> action = Action( DateTime.UtcNow );
+
+			return await ApplicationDataProvider.WriteAsync(
+							async ( session, context ) =>
+								new Written<T>( await context.write( session, context.action ).ConfigureAwait( false ), context.action ),
+							context: new { write, action }
+						)
+						.ConfigureAwait( false );
+		}
+
 		// == Plumbing ==
 
 		private readonly record struct Written<T>( T Value, ActionContext<Reference> Performed )
@@ -505,22 +857,30 @@ namespace Pug.Sal
 			new( key.Country, key.Subdivision!, postcode?.Trim()!, name?.Trim()! );
 
 		private static LocalityChange CountryChange( string country, string kind, ActionContext<Reference> performed ) =>
-			Change( country, ChangeEntityTypes.Country, country, kind, performed, null, null );
+			Change( country, ChangeEntityTypes.Country, country, kind, performed );
 
 		private static LocalityChange SubdivisionChange( string country, string subdivision, string kind, ActionContext<Reference> performed ) =>
-			Change( country, ChangeEntityTypes.Subdivision, subdivision, kind, performed, null, null );
+			Change( country, ChangeEntityTypes.Subdivision, subdivision, kind, performed );
 
 		private static LocalityChange LocalityChange( LocalityDefinition locality, string kind, ActionContext<Reference> performed ) =>
-			Change( locality.Country, ChangeEntityTypes.Locality, locality.Name, kind, performed, locality.Subdivision, locality.Postcode );
+			Change( locality.Country, ChangeEntityTypes.Locality, locality.Name, kind, performed ) with
+			{
+				Subdivision = locality.Subdivision, Postcode = locality.Postcode, Category = locality.Category
+			};
 
-		private static LocalityChange Change( string country, string entityType, string key, string kind, ActionContext<Reference> performed,
-											string? subdivision, string? postcode ) =>
+		// A global category belongs to no country.
+		private static LocalityChange CategoryChange( string category, string kind, ActionContext<Reference> performed ) =>
+			Change( null, ChangeEntityTypes.Category, category, kind, performed );
+
+		private static LocalityChange CountryCategoryChange( string country, string category, string kind, ActionContext<Reference> performed,
+															string? replacement ) =>
+			Change( country, ChangeEntityTypes.CountryCategory, category, kind, performed ) with { Replacement = replacement! };
+
+		private static LocalityChange Change( string? country, string entityType, string key, string kind, ActionContext<Reference> performed ) =>
 			new()
 			{
-				Country = country,
+				Country = country!,
 				EntityType = entityType,
-				Subdivision = subdivision!,
-				Postcode = postcode!,
 				Key = key,
 				Kind = kind,
 				Performed = performed,
@@ -528,7 +888,7 @@ namespace Pug.Sal
 			};
 
 		private Task PublishAsync( LocalityChange change ) =>
-			PublishAsync( publisher => publisher.PublishAsync( change ), change.Country );
+			PublishAsync( publisher => publisher.PublishAsync( change ), change.Country ?? change.Key );
 
 		// After commit and best-effort: a publisher failure is logged, never thrown (D7).
 		private async Task PublishAsync( Func<ILocalityChangeEventPublisher, Task> publish, string country )

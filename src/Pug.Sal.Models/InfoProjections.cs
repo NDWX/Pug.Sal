@@ -25,5 +25,21 @@ namespace Pug.Sal.Models
 				Definition = locality.Definition,
 				Retired = locality.Retired
 			};
+
+		public static CategoryInfo ToInfo( this Category category ) =>
+			new CategoryInfo
+			{
+				Definition = category.Definition,
+				Retired = category.Retired
+			};
+
+		public static CountryCategoryInfo ToInfo( this CountryCategory category ) =>
+			new CountryCategoryInfo
+			{
+				Country = category.Country,
+				Category = category.Category,
+				Name = category.Name,
+				Disabled = category.Disabled
+			};
 	}
 }

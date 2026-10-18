@@ -15,8 +15,10 @@ namespace Pug.Sal.Data.Abstractions
 	// addressing a record that does not exist do nothing and return false; callers read first when
 	// they must tell the caller which record was unknown.
 	//
-	// Records are the full Country, Subdivision and Locality, audit contexts included; the
-	// directory projects them to the audit-free *Info records with ToInfo() (D16).
+	// Records are the full Country, Subdivision, Locality, Category and CountryCategory, audit
+	// contexts included; the directory projects them to the audit-free *Info records with
+	// ToInfo() (D16). Global categories belong to no country, so their writes take no country lock
+	// (D28).
 	//
 	// Insert* methods throw DuplicateKeyException when the record's key already exists.
 	//
@@ -48,6 +50,36 @@ namespace Pug.Sal.Data.Abstractions
 		// version is read, so concurrent callers are serialized and each gets a distinct version.
 		Task<DateTime?> AdvanceVersionAsync( string country, DateTime utcNow );
 
+		// == Global categories ==
+
+		Task InsertCategoryAsync( Category category );
+
+		Task<Category?> GetCategoryAsync( string category );
+
+		// Ordered by code.
+		Task<IEnumerable<Category>> GetCategoriesAsync( bool includeRetired );
+
+		// Replaces the category's Name and stamps LastUpdate.
+		Task<bool> UpdateCategoryAsync( CategoryDefinition definition, ActionContext<Reference> lastUpdate );
+
+		Task<bool> SetCategoryRetiredAsync( string category, DateTime? retired, ActionContext<Reference> lastUpdate );
+
+		// == Country categories ==
+
+		// Inserts the assignment of an existing global category to the country. Its Name is not
+		// stored: reads take it from the global category.
+		Task InsertCountryCategoryAsync( CountryCategory category );
+
+		Task<CountryCategory?> GetCountryCategoryAsync( string country, string category );
+
+		// Ordered by category code; disabled ones only when includeDisabled.
+		Task<IEnumerable<CountryCategory>> GetCountryCategoriesAsync( string country, bool includeDisabled );
+
+		// Sets or clears (disabled null) the assignment's Disabled timestamp and stamps LastUpdate.
+		Task<bool> SetCountryCategoryDisabledAsync( string country, string category, DateTime? disabled, ActionContext<Reference> lastUpdate );
+
+		Task<bool> DeleteCountryCategoryAsync( string country, string category );
+
 		// == Subdivisions ==
 
 		Task InsertSubdivisionAsync( Subdivision subdivision );
@@ -71,14 +103,15 @@ namespace Pug.Sal.Data.Abstractions
 		Task<Locality?> GetLocalityAsync( LocalityKey key );
 
 		// Localities of the country, each filter applied only when given (subdivision code,
-		// normalized postcode, normalized name; exact matches). Ordered by subdivision, name key,
-		// postcode key.
-		Task<IEnumerable<Locality>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, bool includeRetired );
+		// normalized postcode, normalized name, category code; exact matches). Ordered by
+		// subdivision, name key, postcode key.
+		Task<IEnumerable<Locality>> GetLocalitiesAsync( string country, string? subdivision, string? postcodeKey, string? nameKey, string? category, bool includeRetired );
 
 		// Current localities of the country whose name key starts with namePrefixKey (taken
 		// literally: LIKE wildcards in it match only themselves), optionally within one
-		// subdivision. Ordered by name key, subdivision, postcode key; at most limit rows.
-		Task<IEnumerable<Locality>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, int limit );
+		// subdivision and one category. Ordered by name key, subdivision, postcode key; at most
+		// limit rows.
+		Task<IEnumerable<Locality>> SearchLocalitiesAsync( string country, string namePrefixKey, string? subdivision, string? category, int limit );
 
 		// Sets or clears the locality's Retired timestamp, stamps LastUpdate, and moves its stamped
 		// time to lastUpdate's timestamp.
@@ -86,15 +119,21 @@ namespace Pug.Sal.Data.Abstractions
 
 		Task<bool> DeleteLocalityAsync( LocalityKey key );
 
-		// Whether the country holds any locality, retired ones included.
-		Task<bool> HasLocalitiesAsync( string country );
+		// Whether the country holds any locality, retired ones included; only those with the
+		// category when it is given.
+		Task<bool> HasLocalitiesAsync( string country, string? category = null );
+
+		// Moves every locality of the country with category from to category to, retired ones
+		// included: stamps LastUpdate and moves each one's stamped time to lastUpdate's timestamp.
+		// Returns how many moved.
+		Task<int> ReplaceLocalityCategoryAsync( string country, string from, string to, ActionContext<Reference> lastUpdate );
 
 		// == Imports ==
 
 		// One dataset row: inserts the locality when its key is missing (Registration = context,
-		// LastUpdate null, current), otherwise clears Retired and stamps LastUpdate = context. Either
-		// way the row's stamped time becomes context's timestamp. The caller passes each key once
-		// per import.
+		// LastUpdate null, current), otherwise clears Retired, sets its category to the row's and
+		// stamps LastUpdate = context. Either way the row's stamped time becomes context's
+		// timestamp. The caller passes each key once per import.
 		Task<LocalityUpsertOutcome> UpsertImportedLocalityAsync( Locality locality, string? postcodeKey, string nameKey, ActionContext<Reference> context );
 
 		// Deletes the country's localities whose stamped time (the latest of Registration and

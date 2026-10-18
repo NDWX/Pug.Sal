@@ -9,7 +9,8 @@ namespace Pug.Sal.Tests;
 
 // ILocalityAdministration over a real store, run against every store: SqliteLocalityAdministrationTests
 // here, PostgresLocalityAdministrationTests in Pug.Sal.Postgres.Tests.
-public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixture<TFixture> where TFixture : class, IStoreFixture
+public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixture<TFixture>, IAsyncLifetime
+	where TFixture : class, IStoreFixture
 {
 	private readonly TFixture _fixture;
 
@@ -22,6 +23,24 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		_fixture = fixture;
 		_admin = Admin();
 	}
+
+	// The global categories every test's countries are given (DECISIONS D28): TOWN and SUBURB.
+	// Tests share the fixture's database, so they are created once.
+	public async Task InitializeAsync()
+	{
+		foreach( ( string code, string name ) in new[] { ( "TOWN", "Town" ), ( "SUBURB", "Suburb" ) } )
+		{
+			try
+			{
+				await _admin.CreateCategoryAsync( new CategoryDefinition { Code = code, Name = name } );
+			}
+			catch( DuplicateEntryException )
+			{
+			}
+		}
+	}
+
+	public Task DisposeAsync() => Task.CompletedTask;
 
 	// Each test uses its own country codes, since tests share the fixture's database.
 	private static int _countryCounter;
@@ -47,11 +66,12 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 			Name = "Country " + code,
 			PostcodePattern = @"^\d{4}$",
 			PostcodeRequired = true,
-			HasSubdivisions = true
+			HasSubdivisions = true,
+			Categories = new[] { "TOWN", "SUBURB" }
 		};
 
-	private static LocalityDefinition LocalityOf( string country, string? subdivision, string? postcode, string name ) =>
-		new() { Country = country, Subdivision = subdivision!, Postcode = postcode!, Name = name };
+	private static LocalityDefinition LocalityOf( string country, string? subdivision, string? postcode, string name, string category = "TOWN" ) =>
+		new() { Country = country, Subdivision = subdivision!, Postcode = postcode!, Name = name, Category = category };
 
 	// A country with subdivisions NSW, ACT and QLD (QLD retired) and localities Sydney 2000 (NSW)
 	// and Hume 2620 (ACT).
@@ -78,7 +98,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 
 	private static Task<ImportRun> ImportAsync( LocalityAdministration admin, string code, params string[] records ) =>
 		admin.ImportAsync( code,
-			new ImportRequest { Importer = "CSV", Source = "test.csv" },
+			new ImportRequest { Importer = "CSV", Source = "test.csv", Options = new Dictionary<string, string> { [ "defaultCategory" ] = "TOWN" } },
 			new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality\n" + string.Join( "\n", records ) ) ) );
 
 	private async Task<string[]> LocalitiesAsync( string code, bool includeRetired = false ) =>
@@ -121,7 +141,18 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		{ SecurityOperations.Retire, a => a.ReinstateLocalityAsync( "ZZ", "X", "1", "A" ) },
 		{ SecurityOperations.Delete, a => a.DeleteLocalityAsync( "ZZ", "X", "1", "A" ) },
 		{ SecurityOperations.Import, a => a.ImportAsync( "ZZ", new ImportRequest { Importer = "csv" }, new MemoryStream() ) },
-		{ SecurityOperations.Import, a => a.GetImportRunsAsync( "ZZ" ) }
+		{ SecurityOperations.Import, a => a.GetImportRunsAsync( "ZZ" ) },
+		{ SecurityOperations.View, a => a.GetCategoriesAsync() },
+		{ SecurityOperations.View, a => a.GetCategoryAsync( "ZZZ" ) },
+		{ SecurityOperations.View, a => a.GetCountryCategoriesAsync( "ZZ" ) },
+		{ SecurityOperations.Create, a => a.CreateCategoryAsync( new CategoryDefinition { Code = " ", Name = "X" } ) },
+		{ SecurityOperations.Modify, a => a.UpdateCategoryAsync( new CategoryDefinition { Code = "ZZZ", Name = "X" } ) },
+		{ SecurityOperations.Retire, a => a.RetireCategoryAsync( "ZZZ" ) },
+		{ SecurityOperations.Retire, a => a.ReinstateCategoryAsync( "ZZZ" ) },
+		{ SecurityOperations.Modify, a => a.AssignCategoryAsync( "ZZ", "X" ) },
+		{ SecurityOperations.Modify, a => a.UnassignCategoryAsync( "ZZ", "X" ) },
+		{ SecurityOperations.Retire, a => a.DisableCategoryAsync( "ZZ", "X" ) },
+		{ SecurityOperations.Retire, a => a.EnableCategoryAsync( "ZZ", "X" ) }
 	};
 
 	// Granted every other operation, the call is refused; granted its own, it gets past
@@ -161,9 +192,14 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.Null( country.LastUpdate );
 		Assert.Equal( Snapshot( country ), Snapshot( await _admin.GetCountryAsync( code ) ) );
 
-		LocalityChange change = Assert.Single( ChangesOf( code ) );
-		Assert.Equal( ( ChangeEntityTypes.Country, code, ChangeKinds.Created, country.CurrentVersion ),
-					( change.EntityType, change.Key, change.Kind, change.DatasetVersion ) );
+		Assert.Equal( new[]
+					{
+						( ChangeEntityTypes.Country, code, ChangeKinds.Created, country.CurrentVersion ),
+						( ChangeEntityTypes.CountryCategory, "TOWN", ChangeKinds.Created, country.CurrentVersion ),
+						( ChangeEntityTypes.CountryCategory, "SUBURB", ChangeKinds.Created, country.CurrentVersion )
+					},
+					ChangesOf( code ).Select( c => ( c.EntityType, c.Key, c.Kind, c.DatasetVersion ) ) );
+		Assert.Null( ( await _admin.GetCountryAsync( code ) ).Definition.Categories );
 	}
 
 	[Fact]
@@ -297,7 +333,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 	{
 		string code = await SeedAsync();
 		string flat = NewCountry();
-		await _admin.CreateCountryAsync( new CountryDefinition { Code = flat, Name = "Flat", HasSubdivisions = false } );
+		await _admin.CreateCountryAsync( new CountryDefinition { Code = flat, Name = "Flat", HasSubdivisions = false, Categories = new[] { "TOWN" } } );
 		DateTime before = await VersionAsync( code );
 
 		await Assert.ThrowsAsync<UnknownSubdivisionException>( () => _admin.CreateLocalityAsync( LocalityOf( code, "TAS", "7000", "Hobart" ) ) );
@@ -368,7 +404,8 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		await admin.CreateLocalityAsync( LocalityOf( code, null, null, "Yaren" ) );
 		ImportRun run = await ImportAsync( admin, code, ",,Yaren" );
 
-		Assert.Equal( 2, failing.Changes.Count );
+		// The country, its two categories (D28) and the locality.
+		Assert.Equal( 4, failing.Changes.Count );
 		Assert.Single( failing.Imports );
 		Assert.Equal( run.DatasetVersion, await VersionAsync( code ) );
 	}
@@ -471,7 +508,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 	{
 		string code = await SeedAsync();
 		string flat = NewCountry();
-		await _admin.CreateCountryAsync( new CountryDefinition { Code = flat, Name = "Flat", HasSubdivisions = false } );
+		await _admin.CreateCountryAsync( new CountryDefinition { Code = flat, Name = "Flat", HasSubdivisions = false, Categories = new[] { "TOWN" } } );
 
 		await Assert.ThrowsAsync<DatasetImportException>( () => ImportAsync( code ) );
 		await Assert.ThrowsAsync<DatasetImportException>( () => ImportAsync( flat, "X,,Yaren" ) );
@@ -479,5 +516,263 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		await Assert.ThrowsAsync<UnknownDatasetImporterException>(
 			() => _admin.ImportAsync( code, new ImportRequest { Importer = "xml" }, new MemoryStream() ) );
 		Assert.Equal( 2, ( await LocalitiesAsync( code ) ).Length );
+	}
+
+	// == Categories (DECISIONS D28) ==
+
+	// A global category code of the test's own.
+	private static string NewCategory() => "K" + NewCountry();
+
+	private string[] CategoriesOf( IEnumerable<Locality> localities ) =>
+		localities.Select( l => $"{l.Definition.Name}={l.Definition.Category}" ).ToArray();
+
+	[Fact]
+	public async Task GlobalCategoriesAreCreatedRenamedRetiredAndReinstated()
+	{
+		string code = NewCategory();
+
+		Category created = await _admin.CreateCategoryAsync( new CategoryDefinition { Code = $" {code} ", Name = "  Village " } );
+		Category renamed = await _admin.UpdateCategoryAsync( new CategoryDefinition { Code = code, Name = "Hamlet" } );
+		Category retired = await _admin.RetireCategoryAsync( code );
+		Category again = await _admin.RetireCategoryAsync( code );
+		Category reinstated = await _admin.ReinstateCategoryAsync( code );
+
+		Assert.Equal( ( code, "Village" ), ( created.Definition.Code, created.Definition.Name ) );
+		Assert.Equal( "Hamlet", renamed.Definition.Name );
+		Assert.NotNull( renamed.LastUpdate );
+		Assert.NotNull( retired.Retired );
+		Assert.Equal( retired.Retired, again.Retired );
+		Assert.Null( reinstated.Retired );
+		Assert.Equal( "Hamlet", ( await _admin.GetCategoryAsync( code ) ).Definition.Name );
+		Assert.Contains( await _admin.GetCategoriesAsync(), c => c.Definition.Code == code );
+
+		LocalityChange[] changes = _eventPublisher.Changes.Where( c => c.EntityType == ChangeEntityTypes.Category && c.Key == code ).ToArray();
+		Assert.Equal( new[] { ChangeKinds.Created, ChangeKinds.Updated, ChangeKinds.Retired, ChangeKinds.Reinstated }, changes.Select( c => c.Kind ) );
+		Assert.All( changes, c => Assert.Null( c.Country ) );
+
+		DuplicateEntryException duplicate = await Assert.ThrowsAsync<DuplicateEntryException>(
+			() => _admin.CreateCategoryAsync( new CategoryDefinition { Code = code, Name = "Again" } ) );
+		UnknownCategoryException unknown = await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.GetCategoryAsync( code + "X" ) );
+
+		Assert.Equal( ( ChangeEntityTypes.Category, code ), ( duplicate.EntityType, duplicate.Key ) );
+		Assert.Equal( ( (string?)null, code + "X" ), ( unknown.Country, unknown.Category ) );
+		await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.UpdateCategoryAsync( new CategoryDefinition { Code = code + "X", Name = "X" } ) );
+		await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.RetireCategoryAsync( code + "X" ) );
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.CreateCategoryAsync( new CategoryDefinition { Code = code + "Y", Name = " " } ) );
+	}
+
+	[Fact]
+	public async Task CategoryOperationsAreCheckedAgainstTheirResource()
+	{
+		string code = await SeedAsync();
+		LocalityAdministration countriesOnly = Admin( SecurityManagers.GrantingOn( SecurityObjectTypes.Country ) );
+		LocalityAdministration categoriesOnly = Admin( SecurityManagers.GrantingOn( SecurityObjectTypes.Category ) );
+
+		await Assert.ThrowsAsync<AccessDeniedException>(
+			() => countriesOnly.CreateCategoryAsync( new CategoryDefinition { Code = NewCategory(), Name = "X" } ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => countriesOnly.GetCategoriesAsync() );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => categoriesOnly.AssignCategoryAsync( code, "SUBURB" ) );
+		await Assert.ThrowsAsync<AccessDeniedException>( () => categoriesOnly.GetCountryCategoriesAsync( code ) );
+
+		await categoriesOnly.CreateCategoryAsync( new CategoryDefinition { Code = NewCategory(), Name = "X" } );
+		await countriesOnly.DisableCategoryAsync( code, "SUBURB" );
+	}
+
+	[Fact]
+	public async Task ACountryIsCreatedWithCurrentCategoriesOnly()
+	{
+		string code = NewCountry();
+		string retired = NewCategory();
+
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = retired, Name = "Retired" } );
+		await _admin.RetireCategoryAsync( retired );
+
+		ArgumentException none = await Assert.ThrowsAsync<ArgumentException>(
+			() => _admin.CreateCountryAsync( AustraliaLike( code ) with { Categories = new[] { " " } } ) );
+		UnknownCategoryException unknown = await Assert.ThrowsAsync<UnknownCategoryException>(
+			() => _admin.CreateCountryAsync( AustraliaLike( code ) with { Categories = new[] { "TOWN", "NOPE" } } ) );
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.CreateCountryAsync( AustraliaLike( code ) with { Categories = new[] { retired } } ) );
+
+		Assert.Equal( nameof(CountryDefinition.Categories), none.ParamName );
+		Assert.Equal( ( (string?)null, "NOPE" ), ( unknown.Country, unknown.Category ) );
+		await Assert.ThrowsAsync<UnknownCountryException>( () => _admin.GetCountryAsync( code ) );
+
+		await _admin.CreateCountryAsync( AustraliaLike( code ) with { Categories = new[] { " TOWN", "TOWN " } } );
+
+		Versioned<IEnumerable<CountryCategory>> categories = await _admin.GetCountryCategoriesAsync( code );
+		CountryCategory town = Assert.Single( categories.Value );
+		Assert.Equal( ( code, "TOWN", "Town", (DateTime?)null, "alice" ), ( town.Country, town.Category, town.Name, town.Disabled, town.Registration.Actor.Identifier ) );
+		Assert.Equal( await VersionAsync( code ), categories.DatasetVersion );
+	}
+
+	[Fact]
+	public async Task AssigningAndUnassigning()
+	{
+		string code = await SeedAsync();
+		string extra = NewCategory();
+		string retired = NewCategory();
+
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = extra, Name = "Extra" } );
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = retired, Name = "Retired" } );
+		await _admin.RetireCategoryAsync( retired );
+
+		Versioned<CountryCategory> assigned = await _admin.AssignCategoryAsync( code, $" {extra} " );
+		Versioned<CountryCategory> again = await _admin.AssignCategoryAsync( code, extra );
+
+		Assert.Equal( ( extra, "Extra", (DateTime?)null ), ( assigned.Value.Category, assigned.Value.Name, assigned.Value.Disabled ) );
+		Assert.Equal( assigned.DatasetVersion, again.DatasetVersion );
+		Assert.Equal( assigned.DatasetVersion, await VersionAsync( code ) );
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.AssignCategoryAsync( code, retired ) );
+		Assert.Null( ( await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.AssignCategoryAsync( code, "NOPE" ) ) ).Country );
+
+		// Sydney and Hume are TOWNs: TOWN is held, SUBURB and extra are not.
+		ArgumentException held = await Assert.ThrowsAsync<ArgumentException>( () => _admin.UnassignCategoryAsync( code, "TOWN" ) );
+		DateTime unassigned = await _admin.UnassignCategoryAsync( code, extra );
+
+		Assert.Contains( "held by localities", held.Message );
+		Assert.Equal( unassigned, await VersionAsync( code ) );
+		Assert.Equal( new[] { "SUBURB", "TOWN" }, ( await _admin.GetCountryCategoriesAsync( code ) ).Value.Select( c => c.Category ) );
+		Assert.Equal( code, ( await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.UnassignCategoryAsync( code, extra ) ) ).Country );
+
+		// SUBURB is unused but, once TOWN is disabled, the only enabled category.
+		await _admin.DisableCategoryAsync( code, "TOWN" );
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.UnassignCategoryAsync( code, "SUBURB" ) );
+
+		Assert.Equal( new[] { ( ChangeKinds.Created, extra ), ( ChangeKinds.Deleted, extra ), ( ChangeKinds.Retired, "TOWN" ) },
+					ChangesOf( code ).Where( c => c.EntityType == ChangeEntityTypes.CountryCategory && c.Performed.Timestamp > assigned.DatasetVersion.AddTicks( -1 ) )
+									.Select( c => ( c.Kind, c.Key ) ) );
+	}
+
+	[Fact]
+	public async Task DisablingRefusesNewLocalitiesAndKeepsAnEnabledCategory()
+	{
+		string code = await SeedAsync();
+		await _admin.RetireLocalityAsync( code, "ACT", "2620", "Hume" );
+
+		Versioned<CountryCategory> disabled = await _admin.DisableCategoryAsync( code, "TOWN" );
+		Versioned<CountryCategory> again = await _admin.DisableCategoryAsync( code, "town".ToUpperInvariant() );
+
+		Assert.Equal( disabled.DatasetVersion, disabled.Value.Disabled );
+		Assert.Equal( disabled.DatasetVersion, again.DatasetVersion );
+		Assert.Equal( new[] { "Hume=TOWN", "Sydney=TOWN" }, CategoriesOf( ( await _admin.GetLocalitiesAsync( code, includeRetired: true ) ).Value ) );
+
+		ArgumentException refused = await Assert.ThrowsAsync<ArgumentException>( () => _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2001", "Haymarket" ) ) );
+		ArgumentException last = await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "SUBURB" ) );
+		await Assert.ThrowsAsync<DatasetImportException>( () => ImportAsync( code, "NSW,2000,Sydney" ) );
+
+		Assert.Contains( "disabled", refused.Message );
+		Assert.Contains( "at least one enabled category", last.Message );
+
+		Versioned<CountryCategory> enabled = await _admin.EnableCategoryAsync( code, "TOWN" );
+		Versioned<CountryCategory> stillEnabled = await _admin.EnableCategoryAsync( code, "TOWN" );
+
+		Assert.Null( enabled.Value.Disabled );
+		Assert.Equal( enabled.DatasetVersion, stillEnabled.DatasetVersion );
+		await _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2001", "Haymarket" ) );
+	}
+
+	[Fact]
+	public async Task DisablingWithAReplacementMovesTheLocalities()
+	{
+		string code = await SeedAsync();
+		await _admin.RetireLocalityAsync( code, "ACT", "2620", "Hume" );
+		await _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2010", "Surry Hills", "SUBURB" ) );
+
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "TOWN", "TOWN" ) );
+		Assert.Equal( code, ( await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.DisableCategoryAsync( code, "TOWN", "NOPE" ) ) ).Country );
+
+		Versioned<CountryCategory> disabled = await _admin.DisableCategoryAsync( code, "TOWN", " SUBURB " );
+
+		Locality[] all = ( await _admin.GetLocalitiesAsync( code, includeRetired: true ) ).Value.ToArray();
+		Locality hume = all.Single( l => l.Definition.Name == "Hume" );
+
+		Assert.Equal( new[] { "Hume=SUBURB", "Surry Hills=SUBURB", "Sydney=SUBURB" }, CategoriesOf( all ) );
+		Assert.NotNull( hume.Retired );
+		Assert.Equal( disabled.DatasetVersion, hume.LastUpdate!.Timestamp );
+		Assert.Equal( disabled.DatasetVersion, disabled.Value.Disabled );
+		Assert.Empty( ( await _admin.GetLocalitiesAsync( code, category: "TOWN", includeRetired: true ) ).Value );
+
+		LocalityChange change = ChangesOf( code ).Last();
+		Assert.Equal( ( ChangeEntityTypes.CountryCategory, "TOWN", ChangeKinds.Retired, "SUBURB", disabled.DatasetVersion ),
+					( change.EntityType, change.Key, change.Kind, change.Replacement, change.DatasetVersion ) );
+
+		// The replacement must be enabled; a disabled category can be given again to move what
+		// still holds it.
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.DisableCategoryAsync( code, "SUBURB", "TOWN" ) );
+		await _admin.EnableCategoryAsync( code, "TOWN" );
+		await _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2011", "Potts Point", "TOWN" ) );
+		await _admin.DisableCategoryAsync( code, "TOWN" );
+		Versioned<CountryCategory> moved = await _admin.DisableCategoryAsync( code, "TOWN", "SUBURB" );
+
+		Assert.True( moved.DatasetVersion > moved.Value.Disabled );
+		Assert.Equal( "SUBURB", ( await _admin.GetLocalityAsync( code, "NSW", "2011", "Potts Point" ) ).Value.Definition.Category );
+	}
+
+	[Fact]
+	public async Task EnablingRefusesARetiredGlobalCategory()
+	{
+		string code = await SeedAsync();
+		string retiring = NewCategory();
+
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = retiring, Name = "Retiring" } );
+		await _admin.AssignCategoryAsync( code, retiring );
+		await _admin.DisableCategoryAsync( code, retiring );
+		await _admin.RetireCategoryAsync( retiring );
+
+		UnknownCategoryException unknown = await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.EnableCategoryAsync( code, retiring + "X" ) );
+
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.EnableCategoryAsync( code, retiring ) );
+		Assert.Equal( ( code, retiring + "X" ), ( unknown.Country, unknown.Category ) );
+	}
+
+	[Fact]
+	public async Task ALocalityNeedsAnAssignedCategory()
+	{
+		string code = await SeedAsync();
+		string unassigned = NewCategory();
+
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = unassigned, Name = "Unassigned" } );
+
+		UnknownCategoryException unknown = await Assert.ThrowsAsync<UnknownCategoryException>(
+			() => _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2001", "Haymarket", unassigned ) ) );
+		ArgumentException missing = await Assert.ThrowsAsync<ArgumentException>(
+			() => _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2001", "Haymarket", " " ) ) );
+		Versioned<Locality> created = await _admin.CreateLocalityAsync( LocalityOf( code, "NSW", "2001", "Haymarket", " SUBURB " ) );
+
+		Assert.Equal( ( code, unassigned ), ( unknown.Country, unknown.Category ) );
+		Assert.Equal( nameof(LocalityDefinition.Category), missing.ParamName );
+		Assert.Equal( "SUBURB", created.Value.Definition.Category );
+		Assert.Equal( "SUBURB", ChangesOf( code ).Last().Category );
+	}
+
+	[Fact]
+	public async Task ImportsCheckAndApplyTheRowsCategories()
+	{
+		string code = await SeedAsync();
+
+		Task<ImportRun> Import( string records ) =>
+			_admin.ImportAsync( code, new ImportRequest { Importer = "csv" },
+				new MemoryStream( Encoding.UTF8.GetBytes( "subdivision,postcode,locality,category\n" + records ) ) );
+
+		DatasetImportException missing = await Assert.ThrowsAsync<DatasetImportException>( () => Import( "NSW,2000,Sydney,\n" ) );
+		DatasetImportException unknown = await Assert.ThrowsAsync<DatasetImportException>( () => Import( "NSW,2000,Sydney,TOWN\nACT,2620,Hume,NOPE\n" ) );
+		DatasetImportException conflict = await Assert.ThrowsAsync<DatasetImportException>(
+			() => Import( "NSW,2000,Sydney,TOWN\nNSW,2000,sydney,SUBURB\n" ) );
+
+		Assert.Equal( 1, missing.Position );
+		Assert.Equal( 2, unknown.Position );
+		Assert.Equal( 2, conflict.Position );
+
+		await _admin.RetireLocalityAsync( code, "ACT", "2620", "Hume" );
+
+		// Sydney stays a TOWN, Hume (retired) is reinstated as a SUBURB, Parkes is new.
+		ImportRun first = await Import( "NSW,2000,Sydney,TOWN\nACT,2620,Hume,SUBURB\nACT,2600,Parkes,SUBURB\nNSW,2000,Sydney,TOWN\n" );
+		ImportRun second = await Import( "NSW,2000,Sydney,SUBURB\nACT,2620,Hume,SUBURB\nACT,2600,Parkes,SUBURB\n" );
+
+		Assert.Equal( ( 1, 1, 0, 1, 0 ), ( first.Added, first.Reinstated, first.Recategorized, first.Unchanged, first.Deleted ) );
+		Assert.Equal( ( 0, 0, 1, 2, 0 ), ( second.Added, second.Reinstated, second.Recategorized, second.Unchanged, second.Deleted ) );
+		Assert.Equal( new[] { "Hume=SUBURB", "Parkes=SUBURB", "Sydney=SUBURB" }, CategoriesOf( ( await _admin.GetLocalitiesAsync( code ) ).Value ) );
+		Assert.Equal( second.Recategorized, ( await _admin.GetImportRunsAsync( code ) ).First().Recategorized );
+		Assert.Equal( new[] { "Sydney" }, ( await _admin.SearchLocalitiesAsync( code, "s", category: "SUBURB" ) ).Value.Select( l => l.Definition.Name ) );
 	}
 }

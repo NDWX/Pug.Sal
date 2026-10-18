@@ -66,6 +66,19 @@ namespace Pug.Sal.Models
 #endif
 		}
 
+		// NOT_APPLICABLE when the candidate gives no category; RETIRED when it names a disabled
+		// one.
+		[Required, DataMember( IsRequired = true )]
+		public ComponentValidation Category
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
 		// VALID, MISMATCH when the components exist but do not belong together, or NOT_CHECKED when
 		// a component already failed.
 		[Required, DataMember( IsRequired = true )]

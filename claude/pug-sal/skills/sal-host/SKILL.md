@@ -129,24 +129,24 @@ JwtBearer's `MapInboundClaims` decides the names token claims arrive under, and 
 
 The two Sal-side readers work either way. The OAuth accessor reads both the short and the long names of `sub`, `oid` and `tid`, and D23's scope check reads `scope`, `scp` and the long scope name. The setting only affects your own policies and claim checks. The trap is turning mapping off and forgetting `RoleClaimType`: authentication still succeeds, but every role-gated endpoint answers 403. This was verified with signed tokens through JwtBearer: 403 with mapping off and no `RoleClaimType`, 200 with it set, and 200 with mapping on.
 
-**Permissions.** Sal checks these operations (`Pug.Sal.Abstractions.SecurityOperations`), always against `ResourceQualifiers.AllCountries` (`{ Type = "COUNTRY" }`). There are no per-country grants for now (D8).
+**Permissions.** Sal checks these operations (`Pug.Sal.Abstractions.SecurityOperations`) against `ResourceQualifiers.AllCountries` (`{ Type = "COUNTRY" }`), except for the global locality category list, which is checked against `ResourceQualifiers.AllCategories` (`{ Type = "CATEGORY" }`, D28) so that its upkeep can be granted separately. There are no per-country grants for now (D8).
 
 | Operation | Needed for |
 |---|---|
-| `VIEW` | Every directory call, including validation, and the administration reads |
-| `CREATE` | Creating countries, subdivisions and localities |
-| `MODIFY` | Updating countries and subdivisions (localities are never updated) |
-| `RETIRE` | Retiring and reinstating anything |
+| `VIEW` | Every directory call, including validation, and the administration reads. On `CATEGORY`: reading the global category list |
+| `CREATE` | Creating countries, subdivisions and localities. On `CATEGORY`: creating global categories |
+| `MODIFY` | Updating countries and subdivisions (localities are never updated), and assigning or unassigning a country's categories. On `CATEGORY`: renaming global categories |
+| `RETIRE` | Retiring and reinstating anything, and disabling (with replacement) or enabling a country's categories. On `CATEGORY`: retiring and reinstating global categories |
 | `DELETE` | Deleting localities |
 | `IMPORT` | Imports and import history |
 
 Decide them in your `IAuthorizationProvider`. A typical role mapping, for example from Entra app roles through `Pug.Application.Security.AzureADRoleProvider` registered as the `IPrincipalRoleProvider`, is:
 
-- `Sal.Read` gets `VIEW`;
-- `Sal.Maintain` gets every operation except `IMPORT`;
-- `Sal.Admin` gets everything.
+- `Sal.Read` gets `VIEW`, on both resources;
+- `Sal.Maintain` gets every operation except `IMPORT` on `COUNTRY`, and `VIEW` on `CATEGORY`;
+- `Sal.Admin` gets everything, so it alone maintains the global category list.
 
-Derive from `RoleBasedAuthorizationProvider` and implement `PrincipalIsAuthorized[Async]` with that table. [references/SalRoleAuthorization.cs](references/SalRoleAuthorization.cs) is a complete one. It refuses any resource that isn't `COUNTRY`, so a new resource type Sal adds later is denied until you grant it. Sal never references an identity provider: this mapping is entirely the host's.
+Derive from `RoleBasedAuthorizationProvider` and implement `PrincipalIsAuthorized[Async]` with that table. [references/SalRoleAuthorization.cs](references/SalRoleAuthorization.cs) is a complete one. It grants per resource type and refuses any other, so a new resource type Sal adds later is denied until you grant it. Sal never references an identity provider: this mapping is entirely the host's.
 
 ## HTTP endpoints
 
@@ -192,11 +192,12 @@ A host may need to supply its own component at one of Sal's four extension point
 
 ## Loading the first data
 
-A new store is empty. Sal ships no reference data, and an import never creates countries or subdivisions. As a principal holding `CREATE` and `IMPORT`:
+A new store is empty. Sal ships no reference data, and an import never creates countries, subdivisions or categories. As a principal holding `CREATE` and `IMPORT` (and `CREATE` on `CATEGORY`):
 
-1. create each country (`CountryDefinition`: code, name, postcode pattern and whether one is required, and whether it has subdivisions);
-2. create its subdivisions;
-3. import its dataset.
+1. create the global locality categories (for example `SUBURB`, `TOWN`);
+2. create each country (`CountryDefinition`: code, name, postcode pattern and whether one is required, whether it has subdivisions, and its first categories);
+3. create its subdivisions;
+4. import its dataset, every row with a category (a column, or the CSV importer's `defaultCategory` option).
 
 Details are in `sal-administration`.
 
@@ -207,7 +208,7 @@ Details are in `sal-administration`.
 - [ ] `ISecurityManager` resolves the current caller per call. The actor identifier is the caller's Entra object ID (check `Registration.Actor` after a test write). Background jobs run under an explicit principal.
 - [ ] JwtBearer's claim mapping matches your policies (with `MapInboundClaims = false`, `RoleClaimType = "roles"` is set), and a role-gated endpoint admits a caller who holds the role.
 - [ ] The `IAuthorizationProvider` refuses an unauthenticated principal.
-- [ ] The `IAuthorizationProvider` maps every `SecurityOperations` value deliberately, `DELETE` and `IMPORT` included.
+- [ ] The `IAuthorizationProvider` maps every `SecurityOperations` value deliberately, `DELETE` and `IMPORT` included, on both the `COUNTRY` and `CATEGORY` resources.
 - [ ] Endpoint scopes and policies match the provider's grants.
 - [ ] Every importer callers will use is registered, and the request size limit fits your datasets.
 - [ ] Clients are given the route prefixes the host maps (or both sides use the defaults).

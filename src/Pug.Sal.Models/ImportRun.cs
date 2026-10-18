@@ -91,7 +91,21 @@ namespace Pug.Sal.Models
 #endif
 		}
 
-		// Current localities the dataset holds; only their LastUpdate is re-stamped.
+		// Current localities the dataset holds under a different category, which it changed to the
+		// dataset's.
+		[Required, DataMember( IsRequired = true )]
+		public int Recategorized
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
+		// Current localities the dataset holds under the same category; only their LastUpdate is
+		// re-stamped.
 		[Required, DataMember( IsRequired = true )]
 		public int Unchanged
 		{

@@ -80,6 +80,22 @@ namespace Pug.Sal.WebApi
 				.Produces( StatusCodes.Status403Forbidden )
 				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
 
+			authorize( surface.MapGet( "categories", GetCategories ) )
+				.WithName( "SalGetCategories" )
+				.WithTags( "Sal" )
+				.WithSummary( "List the global locality categories, current ones unless includeRetired" )
+				.Produces<IEnumerable<CategoryInfo>>()
+				.Produces( StatusCodes.Status403Forbidden );
+
+			authorize( surface.MapGet( "countries/{country}/categories", GetCountryCategories ) )
+				.WithName( "SalGetCountryCategories" )
+				.WithTags( "Sal" )
+				.WithSummary( "List the categories assigned to a country, disabled ones unless includeDisabled is false" )
+				.Produces<Versioned<IEnumerable<CountryCategoryInfo>>>()
+				.Produces( StatusCodes.Status304NotModified )
+				.Produces( StatusCodes.Status403Forbidden )
+				.Produces<FailureInfo>( StatusCodes.Status404NotFound );
+
 			authorize( surface.MapGet( "countries/{country}/localities/search", SearchLocalities ) )
 				.WithName( "SalSearchLocalities" )
 				.WithTags( "Sal" )
@@ -93,7 +109,7 @@ namespace Pug.Sal.WebApi
 			authorize( surface.MapGet( "countries/{country}/localities", GetLocalities ) )
 				.WithName( "SalGetLocalities" )
 				.WithTags( "Sal" )
-				.WithSummary( "List a country's localities, optionally by subdivision, postcode and name" )
+				.WithSummary( "List a country's localities, optionally by subdivision, postcode, name and category" )
 				.Produces<Versioned<IEnumerable<LocalityInfo>>>()
 				.Produces( StatusCodes.Status304NotModified )
 				.Produces( StatusCodes.Status403Forbidden )
@@ -113,7 +129,7 @@ namespace Pug.Sal.WebApi
 			authorize( surface.MapPost( "validate", Validate ) )
 				.WithName( "SalValidate" )
 				.WithTags( "Sal" )
-				.WithSummary( "Validate an address candidate's country, subdivision, locality and postcode" )
+				.WithSummary( "Validate an address candidate's country, subdivision, locality, postcode and optional category" )
 				.Produces<ValidationResult>()
 				.Produces<BadRequestResultInfo>( StatusCodes.Status400BadRequest )
 				.Produces( StatusCodes.Status403Forbidden )
@@ -152,11 +168,20 @@ namespace Pug.Sal.WebApi
 				() => directory.GetSubdivisionAsync( country, subdivision ),
 				read => SalResults.Tagged( context, SalResults.VersionTag( read.DatasetVersion ), read ) );
 
-		private static Task<IResult> GetLocalities( [FromRoute] string country, [FromQuery] string? subdivision, [FromQuery] string? postcode,
-													[FromQuery] string? name, [FromQuery] bool? includeRetired, HttpContext context,
-													[FromServices] ILocalityDirectory directory ) =>
+		private static Task<IResult> GetCategories( [FromQuery] bool? includeRetired, [FromServices] ILocalityDirectory directory ) =>
+			SalResults.HandleAsync( () => directory.GetCategoriesAsync( includeRetired ?? false ), Results.Ok );
+
+		private static Task<IResult> GetCountryCategories( [FromRoute] string country, [FromQuery] bool? includeDisabled, HttpContext context,
+															[FromServices] ILocalityDirectory directory ) =>
 			SalResults.HandleAsync(
-				() => directory.GetLocalitiesAsync( country, subdivision!, postcode!, name!, includeRetired ?? false ),
+				() => directory.GetCountryCategoriesAsync( country, includeDisabled ?? true ),
+				read => SalResults.Tagged( context, SalResults.VersionTag( read.DatasetVersion ), read ) );
+
+		private static Task<IResult> GetLocalities( [FromRoute] string country, [FromQuery] string? subdivision, [FromQuery] string? postcode,
+													[FromQuery] string? name, [FromQuery] string? category, [FromQuery] bool? includeRetired,
+													HttpContext context, [FromServices] ILocalityDirectory directory ) =>
+			SalResults.HandleAsync(
+				() => directory.GetLocalitiesAsync( country, subdivision!, postcode!, name!, category!, includeRetired ?? false ),
 				read => SalResults.Tagged( context, SalResults.VersionTag( read.DatasetVersion ), read ) );
 
 		private static async Task<IResult> GetLocality( [FromRoute] string country, [FromQuery] string? subdivision,
@@ -173,14 +198,14 @@ namespace Pug.Sal.WebApi
 		}
 
 		private static async Task<IResult> SearchLocalities( [FromRoute] string country, [FromQuery] string? text,
-															[FromQuery] string? subdivision, [FromQuery] int? limit, HttpContext context,
-															[FromServices] ILocalityDirectory directory )
+															[FromQuery] string? subdivision, [FromQuery] string? category, [FromQuery] int? limit,
+															HttpContext context, [FromServices] ILocalityDirectory directory )
 		{
 			if( string.IsNullOrWhiteSpace( text ) )
 				return SalResults.MissingArgument( nameof(text) );
 
 			return await SalResults.HandleAsync(
-							() => directory.SearchLocalitiesAsync( country, text, subdivision!, limit ?? 20 ),
+							() => directory.SearchLocalitiesAsync( country, text, subdivision!, category!, limit ?? 20 ),
 							read => SalResults.Tagged( context, SalResults.VersionTag( read.DatasetVersion ), read ) )
 						.ConfigureAwait( false );
 		}

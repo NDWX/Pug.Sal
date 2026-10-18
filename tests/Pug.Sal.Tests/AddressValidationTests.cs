@@ -49,7 +49,8 @@ public class AddressValidationTests : IClassFixture<AustraliaFixture>
 		Assert.Equal( "AU-NSW", result.Subdivision.Canonical );
 		Assert.Equal( "Sydney", result.Locality.Canonical );
 		Assert.Equal( "2000", result.Postcode.Canonical );
-		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "AU-NSW", Locality = "Sydney", Postcode = "2000" }, result.Match );
+		Assert.Equal( new AddressCandidate { Country = "AU", Subdivision = "AU-NSW", Locality = "Sydney", Postcode = "2000", Category = "SUBURB" },
+					result.Match );
 		Assert.Empty( result.Suggestions );
 		Assert.Equal( AustraliaFixture.AuVersion, result.DatasetVersion );
 	}
@@ -168,7 +169,7 @@ public class AddressValidationTests : IClassFixture<AustraliaFixture>
 		Assert.True( result.IsValid );
 		AssertOutcomes( result, ValidationOutcomes.Valid, ValidationOutcomes.NotApplicable, ValidationOutcomes.Valid,
 						ValidationOutcomes.NotApplicable, ValidationOutcomes.Valid );
-		Assert.Equal( new AddressCandidate { Country = "NR", Locality = "Yaren" }, result.Match );
+		Assert.Equal( new AddressCandidate { Country = "NR", Locality = "Yaren", Category = "TOWN" }, result.Match );
 		Assert.Equal( AustraliaFixture.NrVersion, result.DatasetVersion );
 	}
 
@@ -179,5 +180,71 @@ public class AddressValidationTests : IClassFixture<AustraliaFixture>
 
 		Assert.Equal( ValidationOutcomes.Retired, result.Country.Outcome );
 		Assert.False( result.IsValid );
+	}
+
+	// == Category (optional criterion, DECISIONS D28) ==
+
+	private Task<ValidationResult> ValidateAsync( string locality, string postcode, string? category ) =>
+		_directory.ValidateAsync( new AddressCandidate
+		{
+			Country = "AU", Subdivision = "nsw", Locality = locality, Postcode = postcode, Category = category!
+		} );
+
+	[Theory]
+	[InlineData( "SUBURB" )]
+	[InlineData( " suburb " )]
+	[InlineData( "Suburb" )]
+	public async Task AGivenCategoryIsMatchedByCodeOrName( string category )
+	{
+		ValidationResult result = await ValidateAsync( "Sydney", "2000", category );
+
+		Assert.True( result.IsValid );
+		Assert.Equal( ( ValidationOutcomes.Valid, "SUBURB" ), ( result.Category.Outcome, result.Category.Canonical ) );
+		Assert.Equal( "SUBURB", result.Match.Category );
+	}
+
+	[Fact]
+	public async Task NoCategoryIsNotApplicable()
+	{
+		ValidationResult result = await ValidateAsync( "Sydney", "2000", " " );
+
+		Assert.True( result.IsValid );
+		Assert.Equal( ValidationOutcomes.NotApplicable, result.Category.Outcome );
+		Assert.Null( result.Category.Canonical );
+	}
+
+	[Fact]
+	public async Task ALocalityInAnotherCategoryIsAMismatch()
+	{
+		ValidationResult result = await ValidateAsync( "Sydney", "2000", "town" );
+
+		Assert.False( result.IsValid );
+		Assert.Equal( ValidationOutcomes.Valid, result.Category.Outcome );
+		Assert.Equal( ValidationOutcomes.Mismatch, result.Combination );
+		Assert.Equal( "SUBURB", Assert.Single( result.Suggestions, s => s.Locality == "Sydney" ).Category );
+	}
+
+	[Fact]
+	public async Task AnUnknownCategoryIsNotChecked()
+	{
+		ValidationResult unknown = await ValidateAsync( "Sydney", "2000", "village" );
+		ValidationResult retiredGlobally = await ValidateAsync( "Sydney", "2000", "HAMLET" );
+
+		Assert.Equal( ( ValidationOutcomes.Unknown, ValidationOutcomes.NotChecked ), ( unknown.Category.Outcome, unknown.Combination ) );
+		Assert.Equal( ValidationOutcomes.Unknown, retiredGlobally.Category.Outcome );
+		Assert.False( unknown.IsValid );
+	}
+
+	[Fact]
+	public async Task ADisabledCategoryIsReportedRetired()
+	{
+		ValidationResult result = await _directory.ValidateAsync( new AddressCandidate
+		{
+			Country = "AU", Subdivision = "QLD", Locality = "Spring Creek", Postcode = "4361", Category = "rural"
+		} );
+
+		Assert.False( result.IsValid );
+		Assert.Equal( ( ValidationOutcomes.Retired, "RURAL" ), ( result.Category.Outcome, result.Category.Canonical ) );
+		Assert.Equal( ValidationOutcomes.Valid, result.Combination );
 	}
 }

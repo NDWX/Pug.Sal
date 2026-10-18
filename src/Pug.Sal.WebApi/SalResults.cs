@@ -11,7 +11,7 @@ namespace Pug.Sal.WebApi
 	// only translate (DECISIONS D8):
 	// - AccessDeniedException -> 403 (only that type: any other UnauthorizedAccessException is a
 	//   server fault, D25);
-	// - Unknown{Country,Subdivision,Locality}Exception -> 404 with a FailureInfo;
+	// - Unknown{Country,Subdivision,Locality,Category}Exception -> 404 with a FailureInfo;
 	// - DuplicateEntryException -> 409 with a FailureInfo;
 	// - UnknownDatasetImporterException, DatasetImportException -> 422 with a FailureInfo;
 	// - ArgumentException -> 400 with a BadRequestResultInfo.
@@ -43,6 +43,13 @@ namespace Pug.Sal.WebApi
 				return Results.NotFound( Failure( FailureTypes.UnknownLocality, exception ) with
 				{
 					Country = exception.Country, Subdivision = exception.Subdivision, Postcode = exception.Postcode, Name = exception.Name
+				} );
+			}
+			catch( UnknownCategoryException exception )
+			{
+				return Results.NotFound( Failure( FailureTypes.UnknownCategory, exception ) with
+				{
+					Country = exception.Country, Category = exception.Category
 				} );
 			}
 			catch( DuplicateEntryException exception )

@@ -15,6 +15,10 @@ namespace Pug.Sal.Importers.Csv
 	// - "subdivision": header of the subdivision code column (default "subdivision").
 	//   A postcode or subdivision column named by option must exist; when left to its default and
 	//   absent, every row's value is null (countries without postcodes or subdivisions).
+	// - "category": header of the category code column (default "category"; DECISIONS D28). Like
+	//   the columns above, it must exist when named by option.
+	// - "defaultCategory": the category code of rows whose category cell is blank, or of every row
+	//   when the dataset has no category column. A row left without a category fails the import.
 	// - "delimiter": one character, or "tab" (default ",").
 	public sealed class CsvDatasetImporter : IDatasetImporter
 	{
@@ -38,6 +42,7 @@ namespace Pug.Sal.Importers.Csv
 			int locality = Column( header, settings.Locality, true, headerLine );
 			int postcode = Column( header, settings.Postcode, settings.PostcodeGiven, headerLine );
 			int subdivision = Column( header, settings.Subdivision, settings.SubdivisionGiven, headerLine );
+			int category = Column( header, settings.Category, settings.CategoryGiven, headerLine );
 
 			while( await reader.ReadAsync().ConfigureAwait( false ) is { } fields )
 			{
@@ -48,7 +53,8 @@ namespace Pug.Sal.Importers.Csv
 				{
 					Locality = Value( fields, locality )!,
 					Postcode = Value( fields, postcode )!,
-					Subdivision = Value( fields, subdivision )!
+					Subdivision = Value( fields, subdivision )!,
+					Category = Value( fields, category ) ?? settings.DefaultCategory!
 				};
 			}
 		}
@@ -75,7 +81,7 @@ namespace Pug.Sal.Importers.Csv
 		}
 
 		private sealed record CsvOptions( char Delimiter, string Locality, string Postcode, bool PostcodeGiven, string Subdivision,
-										bool SubdivisionGiven )
+										bool SubdivisionGiven, string Category, bool CategoryGiven, string? DefaultCategory )
 		{
 			public static CsvOptions From( IDictionary<string, string>? options )
 			{
@@ -92,13 +98,17 @@ namespace Pug.Sal.Importers.Csv
 
 				string? postcode = Get( "postcode" );
 				string? subdivision = Get( "subdivision" );
+				string? category = Get( "category" );
 
 				return new CsvOptions( ParseDelimiter( given.TryGetValue( "delimiter", out string? delimiter ) ? delimiter : null ),
 										Get( "locality" ) ?? "locality",
 										postcode ?? "postcode",
 										postcode is not null,
 										subdivision ?? "subdivision",
-										subdivision is not null );
+										subdivision is not null,
+										category ?? "category",
+										category is not null,
+										Get( "defaultCategory" ) );
 			}
 
 			private static char ParseDelimiter( string? value )

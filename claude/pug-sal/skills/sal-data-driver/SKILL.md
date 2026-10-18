@@ -21,16 +21,17 @@ Reference `Pug.Sal.Data.Abstractions`, `Pug.Application.Data`, Dapper (or your d
 These are easy to get wrong:
 
 1. **Locking and versioning in one call.** `AdvanceVersionAsync( country, utcNow )` must take the country row's write lock **before** it reads `currentVersion`, for example with `select … for update` (Postgres) or a no-op `update country set currentVersion = currentVersion` first (SQLite). Under that lock it writes `DatasetVersions.Next( current, utcNow )` and returns the new value. It returns null for an unknown country. Concurrent callers must be serialized and must each get a distinct version. The contract test `ConcurrentTransactionsGetDistinctVersions` checks this.
-2. **Version-valued columns are text** in `DatasetVersions.TextFormat` (`yyyyMMddHHmmssfffffff`, UTC), written with `DatasetVersions.ToText` and read with `DatasetVersions.FromText`. This applies to `country.currentVersion`, `importRun.datasetVersion`, `locality.stamped` and every `retired` column (D6, D19). Don't use the engine's timestamp type: few are exact to the tick, and the text compares in time order only when its collation is bytewise (Postgres uses `collate "C"`).
+2. **Version-valued columns are text** in `DatasetVersions.TextFormat` (`yyyyMMddHHmmssfffffff`, UTC), written with `DatasetVersions.ToText` and read with `DatasetVersions.FromText`. This applies to `country.currentVersion`, `importRun.datasetVersion`, `locality.stamped`, every `retired` column and `countryCategory.disabled` (D6, D19, D28). Don't use the engine's timestamp type: few are exact to the tick, and the text compares in time order only when its collation is bytewise (Postgres uses `collate "C"`).
 3. **"None" is `''` in key columns.** `locality.subdivision` and `locality.postcodeKey` are `not null` primary-key columns that hold `''` when there's none. Map `''` back to null when reading. Codes and keys compare and sort **bytewise** (ordinal), so results come back in the same order as from the other stores.
-4. **`stamped`.** Every locality row keeps the latest of its `Registration` and `LastUpdate` timestamps in a plain indexed column. Every write that touches the row must update it, as the contract says. `DeleteLocalitiesStampedBeforeAsync` is `where country = @c and stamped < @t`.
+4. **`stamped`.** Every locality row keeps the latest of its `Registration` and `LastUpdate` timestamps in a plain indexed column. Every write that touches the row must update it, as the contract says, `ReplaceLocalityCategoryAsync` and a recategorizing upsert included. `DeleteLocalitiesStampedBeforeAsync` is `where country = @c and stamped < @t`.
 5. **Duplicate keys** throw `Pug.Sal.Data.Abstractions.DuplicateKeyException`, wrapping the engine's exception (for example Postgres `23505`, or SQLite constraint `2067`/`1555`). Other constraint failures surface as the engine's own exception.
 6. **Times are UTC on the way out.** Every `DateTime` returned has `DateTimeKind.Utc`. `ActionContext<Reference>` columns (`registration`, `lastUpdate`, `performed`) are JSON text. Use a Dapper type handler, like the stores' `JsonTypeHandler<T>`.
-7. **Search.** `SearchLocalitiesAsync` takes a name prefix **literally**: `%`, `_` and `\` in it match only themselves, so use `left( nameKey, n ) = @prefix` rather than an unescaped `LIKE`. It must use the `(country, nameKey)` index. It may add fuzzy matches after the prefix matches, as Postgres does with `pg_trgm`. Prefix matches come first, and the result holds at most `limit` rows.
+7. **Country categories carry the global name.** `countryCategory` stores no name: `GetCountryCategoryAsync` and `GetCountryCategoriesAsync` join `category` to fill `CountryCategory.Name`.
+8. **Search.** `SearchLocalitiesAsync` takes a name prefix **literally**: `%`, `_` and `\` in it match only themselves, so use `left( nameKey, n ) = @prefix` rather than an unescaped `LIKE`. It must use the `(country, nameKey)` index. It may add fuzzy matches after the prefix matches, as Postgres does with `pg_trgm`. Prefix matches come first, and the result holds at most `limit` rows.
 
 ## Schema
 
-Keep the **same tables and columns** as the built-in stores: `country`, `subdivision`, `locality`, `importRun`, with their primary keys and the indexes `(country, nameKey)`, `(country, postcodeKey)`, `(country, stamped)` and `importRun(country, datasetVersion desc)`. The contract suites read `country.currentVersion` and `locality.stamped` directly with SQL, and keeping the same names lets the stores be compared. Version the scripts the way the stores do (`SchemaVersion( 1, … )`, each `UpgradeScript` with a revert). Never edit a released script: add a new `SchemaVersion`.
+Keep the **same tables and columns** as the built-in stores: `country`, `category`, `countryCategory` (primary key `(country, category)`), `subdivision`, `locality` (with a not-null `category`), `importRun` (with `recategorized`), with their primary keys and the indexes `(country, nameKey)`, `(country, postcodeKey)`, `(country, stamped)`, `(country, category)` and `importRun(country, datasetVersion desc)`. There is no foreign key from `locality` to `subdivision` or `countryCategory`: the facades enforce both (D27, D28). The contract suites read `country.currentVersion` and `locality.stamped` directly with SQL, and keeping the same names lets the stores be compared. Version the scripts the way the stores do (`SchemaVersion( 1, … )`, each `UpgradeScript` with a revert). Never edit a released script: add a new `SchemaVersion`.
 
 ## Transactions
 
@@ -44,8 +45,8 @@ The facades run each unit of work through `UnitsOfWork.ReadAsync` / `WriteAsync`
 
 The driver is correct when it passes Sal's two contract suites, unchanged:
 
-- `StoreContractTests<TFixture>`: the `IDataSession` primitives (25 tests).
-- `LocalityAdministrationContractTests<TFixture>`: the administration facade over your store, imports included (18 tests).
+- `StoreContractTests<TFixture>`: the `IDataSession` primitives.
+- `LocalityAdministrationContractTests<TFixture>`: the administration facade over your store, imports and categories included.
 
 They live in `tests/Pug.Sal.Tests`, which isn't published as a package. Run them the way `tests/Pug.Sal.Postgres.Tests` does:
 

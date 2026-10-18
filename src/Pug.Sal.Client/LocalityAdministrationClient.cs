@@ -50,11 +50,23 @@ namespace Pug.Sal.Client
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<Subdivision>>(
 				$"{Country( _root, country )}/subdivisions/{Escape( subdivision )}" ) );
 
+		public Task<IEnumerable<Category>> GetCategoriesAsync( bool includeRetired = false ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<Category>>(
+				$"{_root}categories", queries: Queries( ( "includeRetired", Flag( includeRetired ) ) ) ) );
+
+		public Task<Category> GetCategoryAsync( string category ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Category>( Category( _root, category ) ) );
+
+		public Task<Versioned<IEnumerable<CountryCategory>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<CountryCategory>>>(
+				$"{Country( _root, country )}/categories", queries: Queries( ( "includeDisabled", Unflag( includeDisabled ) ) ) ) );
+
 		public Task<Versioned<IEnumerable<Locality>>> GetLocalitiesAsync( string country, string subdivision = null!, string postcode = null!,
-																		string name = null!, bool includeRetired = false ) =>
+																		string name = null!, string category = null!,
+																		bool includeRetired = false ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<Locality>>>(
 				$"{Country( _root, country )}/localities",
-				queries: Queries( ( "subdivision", subdivision ), ( "postcode", postcode ), ( "name", name ),
+				queries: Queries( ( "subdivision", subdivision ), ( "postcode", postcode ), ( "name", name ), ( "category", category ),
 								( "includeRetired", Flag( includeRetired ) ) ) ) );
 
 		public Task<Versioned<Locality>> GetLocalityAsync( string country, string subdivision, string postcode, string name ) =>
@@ -62,10 +74,10 @@ namespace Pug.Sal.Client
 				$"{Country( _root, country )}/locality", queries: LocalityKey( subdivision, postcode, name ) ) );
 
 		public Task<Versioned<IEnumerable<Locality>>> SearchLocalitiesAsync( string country, string text, string subdivision = null!,
-																			int limit = 20 ) =>
+																			string category = null!, int limit = 20 ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<Locality>>>(
 				$"{Country( _root, country )}/localities/search",
-				queries: Queries( ( "text", text ), ( "subdivision", subdivision ),
+				queries: Queries( ( "text", text ), ( "subdivision", subdivision ), ( "category", category ),
 								( "limit", limit.ToString( CultureInfo.InvariantCulture ) ) ) ) );
 
 		// == Countries ==
@@ -160,6 +172,49 @@ namespace Pug.Sal.Client
 
 		public Task<IEnumerable<ImportRun>> GetImportRunsAsync( string country ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<ImportRun>>( $"{Country( _root, country )}/imports" ) );
+
+		// == Global categories ==
+
+		public Task<Category> CreateCategoryAsync( CategoryDefinition definition ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.PostAsync<CategoryDefinition, Category>( $"{_root}categories", definition ) );
+
+		public Task<Category> UpdateCategoryAsync( CategoryDefinition definition ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.PutAsync<CategoryDefinition, Category>(
+				Category( _root, definition?.Code ?? string.Empty ), definition! ) );
+
+		public Task<Category> RetireCategoryAsync( string category ) => PostAsync<Category>( $"{Category( _root, category )}/retire" );
+
+		public Task<Category> ReinstateCategoryAsync( string category ) => PostAsync<Category>( $"{Category( _root, category )}/reinstate" );
+
+		// == Country categories ==
+
+		public Task<Versioned<CountryCategory>> AssignCategoryAsync( string country, string category ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.PutAsync<object, Versioned<CountryCategory>>(
+				$"{Country( _root, country )}/categories/{Escape( category )}", new object() ) );
+
+		public async Task<DateTime> UnassignCategoryAsync( string country, string category )
+		{
+			DatasetVersionResult result = await ApiFailures.TranslateAsync(
+												async () =>
+												{
+													using HttpResponseMessage response = await HttpClient.DeleteAsync(
+																							$"{Country( _root, country )}/categories/{Escape( category )}",
+																							mediaType: Json )
+																						.ConfigureAwait( false );
+
+													return await ReadAsync<DatasetVersionResult>( response ).ConfigureAwait( false );
+												} )
+											.ConfigureAwait( false );
+
+			return result.DatasetVersion;
+		}
+
+		public Task<Versioned<CountryCategory>> DisableCategoryAsync( string country, string category, string replacement = null! ) =>
+			PostAsync<Versioned<CountryCategory>>( $"{Country( _root, country )}/categories/{Escape( category )}/disable",
+													Queries( ( "replacement", replacement ) ) );
+
+		public Task<Versioned<CountryCategory>> EnableCategoryAsync( string country, string category ) =>
+			PostAsync<Versioned<CountryCategory>>( $"{Country( _root, country )}/categories/{Escape( category )}/enable" );
 
 		// == Plumbing ==
 

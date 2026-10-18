@@ -56,7 +56,7 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 		};
 
 	private static Locality NewLocalityRecord( string country, string? subdivision, string? postcode, string name,
-										DateTime? registered = null, DateTime? retired = null ) =>
+										DateTime? registered = null, DateTime? retired = null, string category = "TOWN" ) =>
 		new()
 		{
 			Definition = new LocalityDefinition
@@ -64,7 +64,8 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 				Country = country,
 				Subdivision = subdivision!,
 				Postcode = postcode!,
-				Name = name
+				Name = name,
+				Category = category
 			},
 			Retired = retired,
 			Registration = Context( registered ?? Base )
@@ -320,7 +321,7 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 
 		await WriteAsync( s => s.InsertLocalityAsync( locality, null, "NAURU" ) );
 		Locality? read = await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, null, null, "NAURU" ) ) );
-		Locality[] listed = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, false ) ) ).ToArray();
+		Locality[] listed = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, null, false ) ) ).ToArray();
 
 		Assert.NotNull( read );
 		Assert.Null( read.Definition.Subdivision );
@@ -335,8 +336,8 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		Locality[] shared = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, "2620", null, false ) ) ).ToArray();
-		Locality[] springs = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "QLD", null, "SPRING CREEK", false ) ) ).ToArray();
+		Locality[] shared = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, "2620", null, null, false ) ) ).ToArray();
+		Locality[] springs = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "QLD", null, "SPRING CREEK", null, false ) ) ).ToArray();
 
 		Assert.Equal( new[] { "ACT", "NSW" }, shared.Select( l => l.Definition.Subdivision ) );
 		Assert.Equal( new[] { "4000", "4370" }, springs.Select( l => l.Definition.Postcode ) );
@@ -347,11 +348,11 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		Locality[] current = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, false ) ) ).ToArray();
-		Locality[] all = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, true ) ) ).ToArray();
-		Locality[] act = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "ACT", null, null, false ) ) ).ToArray();
-		Locality[] byName = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, "SYDNEY", false ) ) ).ToArray();
-		Locality[] other = ( await ReadAsync( s => s.GetLocalitiesAsync( NewCountry(), null, null, null, true ) ) ).ToArray();
+		Locality[] current = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, null, false ) ) ).ToArray();
+		Locality[] all = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, null, true ) ) ).ToArray();
+		Locality[] act = ( await ReadAsync( s => s.GetLocalitiesAsync( code, "ACT", null, null, null, false ) ) ).ToArray();
+		Locality[] byName = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, "SYDNEY", null, false ) ) ).ToArray();
+		Locality[] other = ( await ReadAsync( s => s.GetLocalitiesAsync( NewCountry(), null, null, null, null, true ) ) ).ToArray();
 
 		Assert.Equal( 6, current.Length );
 		Assert.Equal( 7, all.Length );
@@ -371,11 +372,11 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 	{
 		( string code, _ ) = await SeedAustraliaAsync();
 
-		Locality[] sy = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "SY", null, 10 ) ), "SY" );
-		Locality[] s = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 10 ) ), "S" );
-		Locality[] limited = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, 2 ) ) ).ToArray();
-		Locality[] qld = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", "QLD", 10 ) ), "S" );
-		Locality[] none = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "ZZ", null, 10 ) ), "ZZ" );
+		Locality[] sy = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "SY", null, null, 10 ) ), "SY" );
+		Locality[] s = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, null, 10 ) ), "S" );
+		Locality[] limited = ( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", null, null, 2 ) ) ).ToArray();
+		Locality[] qld = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "S", "QLD", null, 10 ) ), "S" );
+		Locality[] none = PrefixMatches( await ReadAsync( x => x.SearchLocalitiesAsync( code, "ZZ", null, null, 10 ) ), "ZZ" );
 
 		Assert.Equal( "Sydney", Assert.Single( sy ).Definition.Name );
 		Assert.Equal( new[] { "Spring Creek", "Spring Creek", "Sydney" }, s.Select( l => l.Definition.Name ) );
@@ -394,10 +395,10 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2003", "50X Offxtown" ) );
 		await InsertAsync( NewLocalityRecord( code, "NSW", "2004", @"A\B" ) );
 
-		Locality[] percent = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50%", null, 10 ) ), "50%" );
-		Locality[] underscore = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50% OFF_", null, 10 ) ), "50% OFF_" );
-		Locality[] wild = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "%", null, 10 ) ), "%" );
-		Locality[] slash = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, @"A\", null, 10 ) ), @"A\" );
+		Locality[] percent = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50%", null, null, 10 ) ), "50%" );
+		Locality[] underscore = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "50% OFF_", null, null, 10 ) ), "50% OFF_" );
+		Locality[] wild = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "%", null, null, 10 ) ), "%" );
+		Locality[] slash = PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, @"A\", null, null, 10 ) ), @"A\" );
 
 		Assert.Equal( "50% Off_Town", Assert.Single( percent ).Definition.Name );
 		Assert.Equal( "50% Off_Town", Assert.Single( underscore ).Definition.Name );
@@ -672,9 +673,9 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 			deleted = await s.DeleteLocalitiesStampedBeforeAsync( code, importAt );
 		} );
 
-		string[] remaining = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, true ) ) )
+		string[] remaining = ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, null, true ) ) )
 								.Select( l => l.Definition.Name ).ToArray();
-		int otherCount = ( await ReadAsync( s => s.GetLocalitiesAsync( otherCode, null, null, null, true ) ) ).Count();
+		int otherCount = ( await ReadAsync( s => s.GetLocalitiesAsync( otherCode, null, null, null, null, true ) ) ).Count();
 
 		Assert.Equal( 6, deleted );
 		Assert.Equal( new[] { "Orange", "Sydney" }, remaining.OrderBy( n => n, StringComparer.Ordinal ) );
@@ -710,5 +711,125 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 		Assert.Equal( "file-b", runs[0].Source );
 		Assert.Equal( ( 1, 2, 3, 4 ), ( runs[0].Added, runs[0].Reinstated, runs[0].Deleted, runs[0].Unchanged ) );
 		AssertContext( Context( Base.AddDays( 3 ), "importer" ), runs[0].Performed );
+	}
+
+	// == Categories (DECISIONS D28) ==
+
+	[Fact]
+	public async Task CategoriesAndCountryCategoriesRoundTrip()
+	{
+		string code = NewCountry();
+		string first = "K1" + code, second = "K2" + code;
+
+		await WriteAsync( async session =>
+		{
+			await session.InsertCountryAsync( NewCountryRecord( code ) );
+			await session.InsertCategoryAsync( new Category { Definition = new CategoryDefinition { Code = first, Name = "First" }, Registration = Context( Base ) } );
+			await session.InsertCategoryAsync( new Category
+			{
+				Definition = new CategoryDefinition { Code = second, Name = "Second" }, Retired = Base.AddTicks( 3 ), Registration = Context( Base )
+			} );
+			await session.InsertCountryCategoryAsync( new CountryCategory { Country = code, Category = second, Registration = Context( Base ) } );
+			await session.InsertCountryCategoryAsync( new CountryCategory { Country = code, Category = first, Registration = Context( Base ) } );
+		} );
+
+		await Assert.ThrowsAsync<DuplicateKeyException>( () => WriteAsync( session =>
+			session.InsertCountryCategoryAsync( new CountryCategory { Country = code, Category = first, Registration = Context( Base ) } ) ) );
+		await Assert.ThrowsAsync<DuplicateKeyException>( () => WriteAsync( session =>
+			session.InsertCategoryAsync( new Category { Definition = new CategoryDefinition { Code = first, Name = "Again" }, Registration = Context( Base ) } ) ) );
+
+		Category? stored = await ReadAsync( s => s.GetCategoryAsync( second ) );
+		Assert.Equal( ( "Second", Base.AddTicks( 3 ), DateTimeKind.Utc ), ( stored!.Definition.Name, stored.Retired, stored.Registration.Timestamp.Kind ) );
+		Assert.DoesNotContain( await ReadAsync( s => s.GetCategoriesAsync( false ) ), c => c.Definition.Code == second );
+		Assert.Contains( await ReadAsync( s => s.GetCategoriesAsync( true ) ), c => c.Definition.Code == second );
+
+		DateTime disabled = Base.AddTicks( 7 );
+		await WriteAsync( async session =>
+		{
+			Assert.True( await session.UpdateCategoryAsync( new CategoryDefinition { Code = first, Name = "Renamed" }, Context( Base.AddHours( 1 ) ) ) );
+			Assert.True( await session.SetCountryCategoryDisabledAsync( code, second, disabled, Context( disabled ) ) );
+			Assert.False( await session.SetCountryCategoryDisabledAsync( code, "NONE", disabled, Context( disabled ) ) );
+		} );
+
+		CountryCategory[] all = ( await ReadAsync( s => s.GetCountryCategoriesAsync( code, true ) ) ).ToArray();
+		CountryCategory[] enabled = ( await ReadAsync( s => s.GetCountryCategoriesAsync( code, false ) ) ).ToArray();
+
+		Assert.Equal( new[] { $"{first}|Renamed|", $"{second}|Second|{disabled.Ticks}" },
+					all.Select( c => $"{c.Category}|{c.Name}|{c.Disabled?.Ticks}" ) );
+		Assert.Equal( new[] { first }, enabled.Select( c => c.Category ) );
+		Assert.Equal( disabled, ( await ReadAsync( s => s.GetCountryCategoryAsync( code, second ) ) )!.LastUpdate!.Timestamp );
+
+		await WriteAsync( async session =>
+		{
+			Assert.True( await session.SetCategoryRetiredAsync( second, null, Context( Base.AddHours( 2 ) ) ) );
+			Assert.True( await session.DeleteCountryCategoryAsync( code, second ) );
+			Assert.False( await session.DeleteCountryCategoryAsync( code, second ) );
+		} );
+
+		Assert.Null( ( await ReadAsync( s => s.GetCategoryAsync( second ) ) )!.Retired );
+		Assert.Null( await ReadAsync( s => s.GetCountryCategoryAsync( code, second ) ) );
+	}
+
+	[Fact]
+	public async Task LocalitiesAreFilteredAndMovedByCategory()
+	{
+		( string code, _ ) = await SeedAustraliaAsync();
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2010", "Surry Hills", category: "SUBURB" ) );
+		await InsertAsync( NewLocalityRecord( code, "NSW", "2011", "Sydney Old", retired: Base.AddHours( 1 ), category: "SUBURB" ) );
+
+		Assert.Equal( new[] { "SURRY HILLS" },
+					( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, "SUBURB", false ) ) ).Select( l => Key( l.Definition.Name ) ) );
+		Assert.Equal( 2, ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, "SUBURB", true ) ) ).Count() );
+		Assert.Equal( new[] { "SURRY HILLS" },
+					PrefixMatches( await ReadAsync( s => s.SearchLocalitiesAsync( code, "S", null, "SUBURB", 10 ) ), "S" ).Select( l => Key( l.Definition.Name ) ) );
+		Assert.True( await ReadAsync( s => s.HasLocalitiesAsync( code, "SUBURB" ) ) );
+		Assert.False( await ReadAsync( s => s.HasLocalitiesAsync( code, "NONE" ) ) );
+
+		DateTime moved = Base.AddDays( 1 );
+		int count = 0;
+		await WriteAsync( async session => count = await session.ReplaceLocalityCategoryAsync( code, "SUBURB", "TOWN", Context( moved, "bob" ) ) );
+
+		Locality old = ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2011", "SYDNEY OLD" ) ) ) )!;
+
+		Assert.Equal( 2, count );
+		Assert.False( await ReadAsync( s => s.HasLocalitiesAsync( code, "SUBURB" ) ) );
+		Assert.Equal( ( "TOWN", moved, "bob" ), ( old.Definition.Category, old.LastUpdate!.Timestamp, old.LastUpdate.Actor.Identifier ) );
+		Assert.NotNull( old.Retired );
+
+		// The move re-stamps, so a later purge keeps what it moved.
+		int purged = 0;
+		await WriteAsync( async session => purged = await session.DeleteLocalitiesStampedBeforeAsync( code, moved ) );
+		Assert.Equal( 7, purged );
+		Assert.Equal( 2, ( await ReadAsync( s => s.GetLocalitiesAsync( code, null, null, null, "TOWN", true ) ) )
+							.Count( l => l.Definition.Name is "Surry Hills" or "Sydney Old" ) );
+	}
+
+	[Fact]
+	public async Task AnImportedRowUnderAnotherCategoryIsRecategorized()
+	{
+		( string code, _ ) = await SeedAustraliaAsync();
+		DateTime import = Base.AddDays( 1 );
+
+		LocalityUpsertOutcome[] outcomes = Array.Empty<LocalityUpsertOutcome>();
+		await WriteAsync( async session =>
+		{
+			outcomes = new[]
+			{
+				await session.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2000", "Sydney", category: "SUBURB" ), "2000", "SYDNEY", Context( import ) ),
+				await session.UpsertImportedLocalityAsync( NewLocalityRecord( code, "ACT", "2600", "Parkes" ), "2600", "PARKES", Context( import ) ),
+				await session.UpsertImportedLocalityAsync( NewLocalityRecord( code, "NSW", "2001", "Sydney Retired", category: "SUBURB" ), "2001", "SYDNEY RETIRED",
+															Context( import ) )
+			};
+			await session.InsertImportRunAsync( new ImportRun
+			{
+				Identifier = Guid.NewGuid().ToString( "N" ), Country = code, Importer = "csv", Added = 0, Reinstated = 1, Deleted = 0,
+				Recategorized = 1, Unchanged = 1, DatasetVersion = import, Performed = Context( import )
+			} );
+		} );
+
+		Assert.Equal( new[] { LocalityUpsertOutcome.Recategorized, LocalityUpsertOutcome.Unchanged, LocalityUpsertOutcome.Reinstated }, outcomes );
+		Assert.Equal( "SUBURB", ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2000", "SYDNEY" ) ) ) )!.Definition.Category );
+		Assert.Equal( "SUBURB", ( await ReadAsync( s => s.GetLocalityAsync( new LocalityKey( code, "NSW", "2001", "SYDNEY RETIRED" ) ) ) )!.Definition.Category );
+		Assert.Equal( 1, Assert.Single( await ReadAsync( s => s.GetImportRunsAsync( code ) ) ).Recategorized );
 	}
 }

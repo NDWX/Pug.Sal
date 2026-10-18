@@ -32,7 +32,7 @@ The skills above cover everything that is replaceable. These are fixed on purpos
 
 - **Authorization.** Sal calls `ISecurityManager.CurrentPrincipal.IsAuthorizedAsync` (from `Pug.Application.Security`) and never references an identity provider. Whether a user holds a Sal permission, for example through Entra roles, is decided by the host's security manager and its provider. The HTTP endpoints add optional per-surface OAuth scopes and policies (D23). Both are covered in `sal-host`. Do not write an "authorization component" for Sal.
 - **Validation, matching and import semantics.** These live in the facades (`LocalityDirectory`, `LocalityAdministration`, the internal `ImportCoordinator`). They cover: validation never auto-corrects; imports make a country match its dataset (D13); and every write advances the country's version exactly once. A component cannot change them, and must not try to work around them, for example by writing directly to the store.
-- **The data model.** Countries, subdivisions and localities are a fixed three-level model (D2), and a locality's identity is `(country, subdivision, normalized postcode, normalized name)`. There is no custom model or extra field.
+- **The data model.** Countries, subdivisions and localities are a fixed three-level model (D2), and a locality's identity is `(country, subdivision, normalized postcode, normalized name)`. Every locality also has a category, from a global list assigned per country (D28), which is not part of its identity. There is no custom model or extra field.
 - **Licensing of datasets.** Whether a dataset may be loaded is the host's business, outside Sal.
 
 ## Where to go next

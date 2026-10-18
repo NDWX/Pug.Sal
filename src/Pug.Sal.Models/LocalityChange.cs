@@ -5,13 +5,15 @@ using Pug.Effable;
 
 namespace Pug.Sal.Models
 {
-	// A committed register, update, retire, reinstate or delete made through the admin API,
-	// published to the host's ILocalityChangeEventPublisher for audit. An import is a different
-	// event: it publishes its ImportRun, and none of its rows publishes a LocalityChange.
+	// A committed register, update, retire, reinstate or delete made through the admin API (an
+	// assignment or unassignment of a country category included), published to the host's
+	// ILocalityChangeEventPublisher for audit. An import is a different event: it publishes its
+	// ImportRun, and none of its rows publishes a LocalityChange.
 	[DataContract]
 	public record LocalityChange
 	{
-		[Required, DataMember( IsRequired = true )]
+		// Null for a global category change; the country otherwise.
+		[DataMember]
 		public string Country
 		{
 			get;
@@ -59,9 +61,35 @@ namespace Pug.Sal.Models
 #endif
 		}
 
-		// Per EntityType: the country code, the subdivision code, or the locality name.
+		// For a locality change, the locality's category code; null otherwise.
+		[DataMember]
+		public string Category
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
+		// Per EntityType: the country code, the subdivision code, the locality name, or the
+		// category code.
 		[Required, DataMember( IsRequired = true )]
 		public string Key
+		{
+			get;
+#if NET5_0_OR_GREATER
+			init;
+#else
+			set;
+#endif
+		}
+
+		// For a country category disabled with a replacement, the category its localities were
+		// moved to; null otherwise.
+		[DataMember]
+		public string Replacement
 		{
 			get;
 #if NET5_0_OR_GREATER
@@ -94,7 +122,8 @@ namespace Pug.Sal.Models
 #endif
 		}
 
-		// UTC country dataset version the change produced.
+		// UTC country dataset version the change produced; for a global category change, which has
+		// no country, the change's timestamp.
 		[Required, DataMember( IsRequired = true )]
 		public DateTime DatasetVersion
 		{
