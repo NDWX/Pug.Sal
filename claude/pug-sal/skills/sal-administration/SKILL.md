@@ -19,7 +19,7 @@ Every call needs the permission it names, on the server's `ISecurityManager`. Ov
 
 | Permission | Calls |
 |---|---|
-| `VIEW` | `GetCountries`, `GetCountryVersions`, `GetCountry`, `GetSubdivisions`, `GetSubdivision`, `GetCountryCategories`, `GetLocalities`, `GetLocality`, `SearchLocalities` |
+| `VIEW` | `GetCountries`, `GetCountryVersions`, `GetCountry`, `GetSubdivisions`, `GetSubdivision`, `GetCountryCategories`, `GetCategoryCountries`, `GetLocalities`, `GetLocality`, `SearchLocalities` |
 | `CREATE` | `CreateCountryAsync`, `CreateSubdivisionAsync`, `CreateLocalityAsync` |
 | `MODIFY` | `UpdateCountryAsync`, `UpdateSubdivisionAsync`, which replace the definition (the code is the key and can't change); `AssignCategoryAsync`, `UnassignCategoryAsync` |
 | `RETIRE` | `Retire…Async` / `Reinstate…Async` for countries, subdivisions and localities; `DisableCategoryAsync`, `EnableCategoryAsync` |
@@ -52,6 +52,7 @@ These are all checked on the `COUNTRY` resource. **The global category list is c
   - `DisableCategoryAsync( country, category, replacement? )`: new localities and import rows can no longer use it. **With a replacement** (another enabled category of the country), every locality holding it, retired ones included, moves to the replacement in the same write, with `LastUpdate` re-stamped, and one `CategoryReplacement` event (with the count moved) is published instead of a change per locality; nothing is published for a replacement that moves nothing. Without one, they keep the disabled category; call again with a replacement later to move them.
   - `EnableCategoryAsync( country, category )`: refused when the global category is retired.
   - `UnassignCategoryAsync( country, category )`: only while no locality of the country holds it.
+  - `GetCategoryCountriesAsync( category, includeDisabled = true )`: the countries the category is assigned to (retired countries included, by code), one `CountryCategory` each, with `Disabled` (null while enabled there), `Registration` and `LastUpdate`. It spans countries, so it carries no dataset version. An unknown category is `UnknownCategoryException`.
   - **A country keeps at least one enabled category:** disabling or unassigning the last one is refused with `CountryConfigurationException` (409).
 
 ## Setting up a new country

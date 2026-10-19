@@ -145,6 +145,7 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		{ SecurityOperations.View, a => a.GetCategoriesAsync() },
 		{ SecurityOperations.View, a => a.GetCategoryAsync( "ZZZ" ) },
 		{ SecurityOperations.View, a => a.GetCountryCategoriesAsync( "ZZ" ) },
+		{ SecurityOperations.View, a => a.GetCategoryCountriesAsync( "ZZZ" ) },
 		{ SecurityOperations.Create, a => a.CreateCategoryAsync( new CategoryDefinition { Code = " ", Name = "X" } ) },
 		{ SecurityOperations.Modify, a => a.UpdateCategoryAsync( new CategoryDefinition { Code = "ZZZ", Name = "X" } ) },
 		{ SecurityOperations.Retire, a => a.RetireCategoryAsync( "ZZZ" ) },
@@ -803,5 +804,36 @@ public abstract class LocalityAdministrationContractTests<TFixture> : IClassFixt
 		Assert.Equal( new[] { "Hume=SUBURB", "Parkes=SUBURB", "Sydney=SUBURB" }, CategoriesOf( ( await _admin.GetLocalitiesAsync( code ) ).Value ) );
 		Assert.Equal( second.Recategorized, ( await _admin.GetImportRunsAsync( code ) ).First().Recategorized );
 		Assert.Equal( new[] { "Sydney" }, ( await _admin.SearchLocalitiesAsync( code, "s", category: "SUBURB" ) ).Value.Select( l => l.Definition.Name ) );
+	}
+
+	[Fact]
+	public async Task CountriesAreListedByCategoryWithTheirStateAndAuditContexts()
+	{
+		string category = NewCategory();
+		string first = await SeedAsync(), second = await SeedAsync();
+		await SeedAsync();   // a country without the category, which the listing leaves out
+
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = category, Name = "Listed" } );
+		Versioned<CountryCategory> assigned = await _admin.AssignCategoryAsync( first, category );
+		await _admin.AssignCategoryAsync( second, category );
+		Versioned<CountryCategory> disabled = await _admin.DisableCategoryAsync( second, category );
+		await _admin.RetireCountryAsync( second );
+
+		CountryCategory[] all = ( await _admin.GetCategoryCountriesAsync( $" {category} " ) ).ToArray();
+		CountryCategory[] enabled = ( await _admin.GetCategoryCountriesAsync( category, includeDisabled: false ) ).ToArray();
+
+		Assert.Equal( new[] { first, second }, all.Select( c => c.Country ) );
+		Assert.All( all, c => Assert.Equal( ( category, "Listed" ), ( c.Category, c.Name ) ) );
+		Assert.Equal( ( (DateTime?)null, assigned.DatasetVersion, "alice", (DateTime?)null ),
+					( all[ 0 ].Disabled, all[ 0 ].Registration.Timestamp, all[ 0 ].Registration.Actor.Identifier, all[ 0 ].LastUpdate?.Timestamp ) );
+		Assert.Equal( ( disabled.DatasetVersion, disabled.DatasetVersion ), ( all[ 1 ].Disabled, all[ 1 ].LastUpdate!.Timestamp ) );
+		Assert.Equal( new[] { first }, enabled.Select( c => c.Country ) );
+
+		string lonely = NewCategory();
+		await _admin.CreateCategoryAsync( new CategoryDefinition { Code = lonely, Name = "Lonely" } );
+
+		Assert.Empty( await _admin.GetCategoryCountriesAsync( lonely ) );
+		Assert.Null( ( await Assert.ThrowsAsync<UnknownCategoryException>( () => _admin.GetCategoryCountriesAsync( lonely + "X" ) ) ).Country );
+		await Assert.ThrowsAsync<ArgumentException>( () => _admin.GetCategoryCountriesAsync( " " ) );
 	}
 }

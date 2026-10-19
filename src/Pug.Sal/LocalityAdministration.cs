@@ -68,6 +68,26 @@ namespace Pug.Sal
 		public Task<Versioned<IEnumerable<CountryCategory>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true ) =>
 			ReadCountryCategoriesAsync( country, includeDisabled );
 
+		// Assignments are country data, so this is a VIEW on AllCountries like the per-country read.
+		public async Task<IEnumerable<CountryCategory>> GetCategoryCountriesAsync( string category, bool includeDisabled = true )
+		{
+			await CheckAuthorizationAsync( SecurityOperations.View ).ConfigureAwait( false );
+
+			string code = RequiredCategory( category, nameof(category) );
+
+			IEnumerable<CountryCategory>? assigned = await ApplicationDataProvider.ReadAsync(
+															async ( session, context ) =>
+																await session.GetCategoryAsync( context.code ).ConfigureAwait( false ) is null
+																	? null
+																	: await session.GetCategoryCountriesAsync( context.code, context.includeDisabled )
+																					.ConfigureAwait( false ),
+															context: new { code, includeDisabled }
+														)
+														.ConfigureAwait( false );
+
+			return assigned ?? throw new UnknownCategoryException( null!, code );
+		}
+
 		public Task<Versioned<IEnumerable<Locality>>> GetLocalitiesAsync( string country, string subdivision = null!,
 																		string postcode = null!, string name = null!,
 																		string category = null!, bool includeRetired = false ) =>

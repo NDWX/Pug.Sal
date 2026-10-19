@@ -757,6 +757,10 @@ public abstract class StoreContractTests<TFixture> : IClassFixture<TFixture> whe
 		Assert.Equal( new[] { $"{first}|Renamed|", $"{second}|Second|{disabled.Ticks}" },
 					all.Select( c => $"{c.Category}|{c.Name}|{c.Disabled?.Ticks}" ) );
 		Assert.Equal( new[] { first }, enabled.Select( c => c.Category ) );
+		Assert.Equal( new[] { $"{code}|Second|{disabled.Ticks}" },
+					( await ReadAsync( s => s.GetCategoryCountriesAsync( second, true ) ) ).Select( c => $"{c.Country}|{c.Name}|{c.Disabled?.Ticks}" ) );
+		Assert.Empty( await ReadAsync( s => s.GetCategoryCountriesAsync( second, false ) ) );
+		Assert.Empty( await ReadAsync( s => s.GetCategoryCountriesAsync( "NONE", true ) ) );
 		Assert.Equal( disabled, ( await ReadAsync( s => s.GetCountryCategoryAsync( code, second ) ) )!.LastUpdate!.Timestamp );
 
 		await WriteAsync( async session =>

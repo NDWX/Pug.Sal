@@ -75,6 +75,10 @@ namespace Pug.Sal.Data.Abstractions
 		// Ordered by category code; disabled ones only when includeDisabled.
 		Task<IEnumerable<CountryCategory>> GetCountryCategoriesAsync( string country, bool includeDisabled );
 
+		// The category's assignments to countries, retired countries included, ordered by country
+		// code; disabled ones only when includeDisabled. Empty when no country has it.
+		Task<IEnumerable<CountryCategory>> GetCategoryCountriesAsync( string category, bool includeDisabled );
+
 		// Sets or clears (disabled null) the assignment's Disabled timestamp and stamps LastUpdate.
 		Task<bool> SetCountryCategoryDisabledAsync( string country, string category, DateTime? disabled, ActionContext<Reference> lastUpdate );
 

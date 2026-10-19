@@ -619,6 +619,19 @@ namespace Pug.Sal.Data.SQLite
 			return rows.Select( Compose ).ToList();
 		}
 
+		public async Task<IEnumerable<CountryCategory>> GetCategoryCountriesAsync( string category, bool includeDisabled )
+		{
+			IEnumerable<CountryCategoryRow> rows = await Connection.QueryAsync<CountryCategoryRow>(
+														$@"select {CountryCategoryColumns}
+															from countryCategory c join category g on g.code = c.category
+															where c.category = @category and ( @includeDisabled = 1 or c.disabled is null )
+															order by c.country;",
+														new { category, includeDisabled }
+													).ConfigureAwait( false );
+
+			return rows.Select( Compose ).ToList();
+		}
+
 		public async Task<bool> SetCountryCategoryDisabledAsync( string country, string category, DateTime? disabled,
 																ActionContext<Reference> lastUpdate )
 		{

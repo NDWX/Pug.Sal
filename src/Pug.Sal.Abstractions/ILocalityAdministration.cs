@@ -68,6 +68,13 @@ namespace Pug.Sal.Abstractions
 		// The categories assigned to the country, ordered by code. Throws UnknownCountryException.
 		Task<Versioned<IEnumerable<CountryCategory>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true );
 
+		// The countries the category is assigned to, retired countries included, ordered by country
+		// code: one CountryCategory each, whose Disabled says whether the category is disabled there
+		// (null while enabled), with its Registration and LastUpdate. Disabled assignments are left
+		// out unless includeDisabled. Spans countries, so it carries no dataset version. Throws
+		// UnknownCategoryException (Country null) when the global category does not exist.
+		Task<IEnumerable<CountryCategory>> GetCategoryCountriesAsync( string category, bool includeDisabled = true );
+
 		// Lists the country's localities, narrowed by any combination of subdivision code,
 		// postcode, name and category code, as ILocalityDirectory.GetLocalitiesAsync. Throws
 		// UnknownCountryException when the country does not exist.

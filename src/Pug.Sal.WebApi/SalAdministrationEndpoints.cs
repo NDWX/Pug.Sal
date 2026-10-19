@@ -87,6 +87,11 @@ namespace Pug.Sal.WebApi
 				.Produces<Category>()
 				.NotFound();
 
+			Endpoint( surface.MapGet( "categories/{category}/countries", GetCategoryCountries ), "SalAdminGetCategoryCountries",
+					"List the countries a category is assigned to, each with whether it is disabled there and its audit contexts" )
+				.Produces<IEnumerable<CountryCategory>>()
+				.NotFound();
+
 			Endpoint( surface.MapGet( "countries/{country}/categories", GetCountryCategories ), "SalAdminGetCountryCategories",
 					"List the categories assigned to a country with their audit contexts, disabled ones unless includeDisabled is false" )
 				.Produces<Versioned<IEnumerable<CountryCategory>>>()
@@ -313,6 +318,10 @@ namespace Pug.Sal.WebApi
 
 		private static Task<IResult> GetCategory( [FromRoute] string category, [FromServices] ILocalityAdministration administration ) =>
 			SalResults.HandleAsync( () => administration.GetCategoryAsync( category ), Results.Ok );
+
+		private static Task<IResult> GetCategoryCountries( [FromRoute] string category, [FromQuery] bool? includeDisabled,
+															[FromServices] ILocalityAdministration administration ) =>
+			SalResults.HandleAsync( () => administration.GetCategoryCountriesAsync( category, includeDisabled ?? true ), Results.Ok );
 
 		private static Task<IResult> GetCountryCategories( [FromRoute] string country, [FromQuery] bool? includeDisabled, HttpContext context,
 															[FromServices] ILocalityAdministration administration ) =>

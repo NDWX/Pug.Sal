@@ -239,6 +239,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Category village = await _admin.CreateCategoryAsync( new CategoryDefinition { Code = "VILLAGE", Name = "Villag" } );
 		Category renamed = await _admin.UpdateCategoryAsync( new CategoryDefinition { Code = "VILLAGE", Name = "Village" } );
 		Versioned<CountryCategory> assigned = await _admin.AssignCategoryAsync( code, "VILLAGE" );
+		CountryCategory listed = Assert.Single( await _admin.GetCategoryCountriesAsync( "VILLAGE" ) );
 		await _admin.CreateLocalityAsync( new LocalityDefinition { Country = code, Subdivision = "S1", Postcode = "1000", Name = "Alpha", Category = "VILLAGE" } );
 		Versioned<CountryCategory> disabled = await _admin.DisableCategoryAsync( code, "VILLAGE", "TOWN" );
 		Versioned<CountryCategory> enabled = await _admin.EnableCategoryAsync( code, "VILLAGE" );
@@ -248,6 +249,7 @@ public class SalApiTests : IClassFixture<SalApiFixture>
 		Assert.Equal( SalApiFixture.Admin, village.Registration.Actor.Identifier );
 		Assert.Equal( "Village", renamed.Definition.Name );
 		Assert.Equal( ( "VILLAGE", "Village" ), ( assigned.Value.Category, assigned.Value.Name ) );
+		Assert.Equal( ( code, (DateTime?)null, SalApiFixture.Admin ), ( listed.Country, listed.Disabled, listed.Registration.Actor.Identifier ) );
 		Assert.Equal( disabled.DatasetVersion, disabled.Value.Disabled );
 		Assert.Null( enabled.Value.Disabled );
 		Assert.Equal( "TOWN", ( await _admin.GetLocalityAsync( code, "S1", "1000", "Alpha" ) ).Value.Definition.Category );

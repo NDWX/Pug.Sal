@@ -60,6 +60,7 @@ public class EndpointMetadataTests : IClassFixture<SalApiFixture>
 		{ "SalAdminGetCategories", new[] { 200, 403 } },
 		{ "SalAdminGetCategory", new[] { 200, 403, 404 } },
 		{ "SalAdminGetCountryCategories", new[] { 200, 304, 403, 404 } },
+		{ "SalAdminGetCategoryCountries", new[] { 200, 403, 404 } },
 		{ "SalAdminCreateCategory", new[] { 201, 400, 403, 409 } },
 		{ "SalAdminUpdateCategory", new[] { 200, 400, 403, 404 } },
 		{ "SalAdminRetireCategory", new[] { 200, 403, 404 } },

@@ -864,6 +864,19 @@ assistant's choices.
 - **Reads:** `GetLocalitiesAsync` and `SearchLocalitiesAsync` (both facades) take an optional
   `category` code, matched exactly. The directory also lists the global categories and a country's
   categories.
+  - **Countries by category (user request, 2026-10-19):** `ILocalityAdministration.
+    GetCategoryCountriesAsync( category, includeDisabled = true )` lists the countries a category
+    is assigned to, as full `CountryCategory` records: `Disabled` (null while enabled),
+    `Registration` and `LastUpdate`.
+  - **Assistant's choices for that read:**
+    - It is on administration only, since the request asked for the audit contexts.
+    - It needs `VIEW` on `AllCountries`, because assignments are country data.
+    - Retired countries are included, ordered by country code.
+    - It carries no dataset version and no ETag, because it spans countries.
+    - An unknown global category is `UnknownCategoryException`.
+    - It is served at `GET administration/categories/{category}/countries`.
+    - There is no index on `countryCategory(category)`: the table is countries × categories, so
+      the schema is unchanged.
 - **Validation** *(user: optional criterion)*:
   - **The criterion:** `AddressCandidate.Category` is optional. When it is blank,
     `ValidationResult.Category` is `NOT_APPLICABLE`.
@@ -950,5 +963,5 @@ instruction; the user chose to keep that work.)
   - The marketplace entry is added once S3 is done.
 - **D28 locality categories.** DONE (global categories, country assignments with disable and
   replacement, a required locality category, the category criterion in reads and validation, the
-  CSV importer's `category` and `defaultCategory` options; schema version 1 rewritten; 259 SQLite +
-  93 Postgres tests). Awaiting the user's verification.
+  CSV importer's `category` and `defaultCategory` options; schema version 1 rewritten; countries listed by
+  category; 263 SQLite + 96 Postgres tests). Released as `0.1.0-pre` (`sal-pre-v0.1.0`).

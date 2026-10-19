@@ -57,6 +57,10 @@ namespace Pug.Sal.Client
 		public Task<Category> GetCategoryAsync( string category ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Category>( Category( _root, category ) ) );
 
+		public Task<IEnumerable<CountryCategory>> GetCategoryCountriesAsync( string category, bool includeDisabled = true ) =>
+			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<IEnumerable<CountryCategory>>(
+				$"{Category( _root, category )}/countries", queries: Queries( ( "includeDisabled", Unflag( includeDisabled ) ) ) ) );
+
 		public Task<Versioned<IEnumerable<CountryCategory>>> GetCountryCategoriesAsync( string country, bool includeDisabled = true ) =>
 			ApiFailures.TranslateAsync( () => HttpClient.GetAsync<Versioned<IEnumerable<CountryCategory>>>(
 				$"{Country( _root, country )}/categories", queries: Queries( ( "includeDisabled", Unflag( includeDisabled ) ) ) ) );

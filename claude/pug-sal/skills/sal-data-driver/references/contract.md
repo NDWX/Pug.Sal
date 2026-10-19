@@ -38,6 +38,7 @@ This file repeats the comments in `src/Pug.Sal.Data.Abstractions/IDataSession.cs
 | `InsertCountryCategoryAsync( CountryCategory )` | Insert the assignment (`country`, `category`, `disabled`, audit). `Name` is not stored. |
 | `GetCountryCategoryAsync( country, category )` | The assignment, with `Name` read from the global category, or null. |
 | `GetCountryCategoriesAsync( country, includeDisabled )` | Ordered by category code, each with the global `Name`; disabled ones only when `includeDisabled`. |
+| `GetCategoryCountriesAsync( category, includeDisabled )` | The category's assignments, retired countries included, ordered by country code, each with the global `Name`; disabled ones only when `includeDisabled`. Empty when no country has it. |
 | `SetCountryCategoryDisabledAsync( country, category, disabled?, lastUpdate )` | Set or clear `Disabled`. Stamp `LastUpdate`. |
 | `DeleteCountryCategoryAsync( country, category )` | Delete. Returns whether a row was deleted. |
 
